@@ -422,7 +422,7 @@
       function buildMessages(trigger,extra = {}) {
         const player = settings.playerName.trim() || "你";
         const card = settings.characterDescription.trim() || "（角色卡沒有補充描述）";
-        const scene = "【角色卡】\n角色名：" + settings.characterName.trim() + "\n" + card + "\n\n【牌桌場景】\n你是" + settings.characterName.trim() + "，正在跟" + player + "面對面玩撲克比大小，你當莊家。用這個角色的口吻說話。規則玩家大致會；你負責發牌、看對方糾結、回應輸贏。相處模式只依角色卡，不自行預設關係。\n\n【輸出規則（最高優先）】\n- 輸出只有台詞本文，零其他；至多兩句，一句能講完就一句。\n- 禁 markdown、表情符號、顏文字、引號包台詞、動作描寫與旁白。\n- 牌局資訊是小抄：禁逐字複誦，禁報一長串牌面。\n- 同一個梗不要重複。";
+        const scene = "【角色卡】\n角色名：" + settings.characterName.trim() + "\n" + card + "\n\n【牌桌場景】\n你是" + settings.characterName.trim() + "，正在跟" + player + "面對面玩撲克比大小。你永遠是莊家：牌是你發的、蓋著的底牌是你的、補牌也是你自己補——" + player + "只決定要牌或停牌，從頭到尾不經手發牌。用這個角色的口吻說話。規則玩家大致會；你看對方糾結、回應輸贏。相處模式只依角色卡，不自行預設關係。\n\n【輸出規則（最高優先）】\n- 輸出只有台詞本文，零其他；至多兩句，一句能講完就一句。\n- 禁 markdown、表情符號、顏文字、引號包台詞、動作描寫與旁白。\n- 牌局資訊是小抄：禁逐字複誦，禁報一長串牌面。\n- 身分校對：發牌的人是你，禁催" + player + "發牌、禁把莊家的事說成對方的。\n- 同一個梗不要重複。";
         const messages = [{ role: "system", content: scene }];
         for (const row of transcript.filter(entry => entry.who === "him").slice(-12)) messages.push({ role: "assistant", content: row.text });
         messages.push({ role: "user", content: buildTrigger(trigger,extra) });
