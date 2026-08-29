@@ -71,18 +71,22 @@
     .action.secondary { color: #8a5560; background: transparent; } .action.wide { grid-column: 1/-1; } .action:disabled { cursor: not-allowed; opacity: .42; }
     .panel { min-width: 0; padding: clamp(16px,2.6vw,24px); border: 1px solid rgba(122,95,73,.2); border-radius: 14px; background: var(--panel); box-shadow: 0 9px 28px rgba(72,51,36,.12); }
     .panel h2 { margin: 0 0 9px; color: var(--muted); font-size: .78rem; letter-spacing: .12em; }
-    .record { margin: 0 0 16px; padding: 11px 12px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted); font-size: .8rem; line-height: 1.7; }
+    .record { margin: 0; padding: 11px 12px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted); font-size: .8rem; line-height: 1.7; }
     .record strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .record-note { margin: 6px 0 16px; color: var(--muted); font-size: .72rem; line-height: 1.45; }
     .rule-note, .setup-note { color: var(--muted); font-size: .8rem; line-height: 1.55; }
     .setup-note { padding: 10px 11px; border-radius: 9px; background: #f9edf0; color: #7b5159; }
     .setup-note.ready { background: #edf5ee; color: #4e6d52; }
     .chatlog-overlay, .drawer-overlay { position: fixed; inset: 0; z-index: 60; display: flex; background: rgba(58,44,34,.32); }
     .chatlog-overlay { align-items: center; justify-content: center; } .chatlog-overlay[hidden], .drawer-overlay[hidden] { display: none; }
     .chatlog-panel { display: flex; flex-direction: column; width: min(440px,92vw); max-height: 74vh; border-radius: 16px; border: 1px solid rgba(122,95,73,.25); overflow: hidden; background: rgba(251,246,237,.97); box-shadow: 0 18px 44px rgba(48,38,31,.3); }
-    .chatlog-head, .drawer-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 10px 18px; border-bottom: 1px solid rgba(122,95,73,.12); }
+    .chatlog-head, .drawer-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 12px 10px 18px; border-bottom: 1px solid rgba(122,95,73,.12); }
     .chatlog-body { flex: 1; overflow-y: auto; padding: 8px 16px 18px; }
     .icon-close { width: 32px; height: 32px; border: 0; border-radius: 50%; background: rgba(183,110,121,.16); color: #8a5560; cursor: pointer; }
     .chatlog-title { font-size: .78rem; letter-spacing: .18em; color: #a08a8d; }
+    .chatlog-actions { display: flex; align-items: center; gap: 5px; }
+    .chatlog-tool { position: relative; min-height: 30px; padding: 4px 8px; display: grid; place-items: center; border: 1px solid #d9b2b8; border-radius: 7px; color: #87525b; background: #fff; cursor: pointer; font-size: .72rem; font-weight: 800; }
+    .chatlog-tool input { position: absolute; width: 1px; height: 1px; opacity: 0; }
     .cl-row { display: flex; margin: 7px 0; } .cl-row.you { justify-content: flex-end; }
     .cl-bubble { max-width: 82%; padding: 8px 11px; font-size: .9rem; line-height: 1.55; border: 1px solid rgba(122,95,73,.16); }
     .cl-row.him .cl-bubble { background: #fff; border-radius: 4px 13px 13px 13px; }
@@ -101,6 +105,10 @@
     .field input, .field textarea { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #bca790; border-radius: 8px; color: var(--ink); background: #fff; font-size: 16px; }
     .field textarea { min-height: 180px; resize: vertical; line-height: 1.5; }
     .inline { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; align-items: stretch; }
+    .quick-picks { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .quick-picks .small-button { min-height: 32px; padding-block: 4px; font-size: .75rem; }
+    .card-tools, .avatar-upload-grid { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; margin-bottom: 10px; }
+    .avatar-upload-grid { grid-template-columns: 1fr 1fr; }
     .small-button, .danger-button, .upload-label { min-height: 40px; padding: 7px 11px; border: 1px solid #b9828a; border-radius: 8px; color: #87525b; background: #fff; cursor: pointer; font-weight: 750; }
     .upload-label { display: grid; place-items: center; text-align: center; }
     .upload-label input { position: absolute; width: 1px; height: 1px; opacity: 0; }
@@ -142,7 +150,7 @@
           </section>
         </div>
         <div id="youBubbleStack" class="bubble-stack bubble-stack-you" aria-live="polite"></div>
-        <button class="avatar avatar-you" type="button" aria-label="開啟本桌對話"><span class="avatar-fallback">你</span></button>
+        <button class="avatar avatar-you" type="button" aria-label="開啟本桌對話"><img id="playerAvatar" alt=""><span id="playerFallback" class="avatar-fallback">你</span></button>
       </div>
       <form id="chatForm" class="chat-row" autocomplete="off">
         <label class="sr-only" for="chatInput">跟莊家說話</label>
@@ -159,6 +167,7 @@
     <aside class="panel" aria-label="牌局帳">
       <h2>本模式戰績</h2>
       <p id="record" class="record">你贏 <strong>0</strong> ／ 莊贏 <strong>0</strong> ／ 平 <strong>0</strong></p>
+      <p class="record-note">備份與還原在對話視窗（點頭像開啟）</p>
       <p id="setupNote" class="setup-note">設定完成後莊家會開口</p>
       <p id="ruleNote" class="rule-note"></p>
     </aside>
@@ -170,6 +179,11 @@
       <form id="settingsForm" class="settings-form">
         <fieldset>
           <legend>API</legend>
+          <div class="quick-picks" aria-label="服務商快選">
+            <button class="small-button" type="button" data-endpoint-preset="google">Google AI Studio</button>
+            <button class="small-button" type="button" data-endpoint-preset="openrouter">OpenRouter</button>
+            <button class="small-button" type="button" data-endpoint-preset="custom">自訂</button>
+          </div>
           <div class="field"><label for="endpointInput">端點網址</label><input id="endpointInput" name="endpoint" autocomplete="url"></div>
           <div class="field"><label for="apiKeyInput">金鑰</label><div class="inline"><input id="apiKeyInput" name="apiKey" type="password" autocomplete="off"><button id="toggleKeyButton" class="small-button" type="button">顯示</button></div></div>
           <div class="field"><label for="modelInput">模型名</label><div class="inline"><input id="modelInput" name="model" list="modelList" autocomplete="off"><button id="loadModelsButton" class="small-button" type="button">撈清單</button></div><datalist id="modelList"></datalist></div>
@@ -177,11 +191,19 @@
         </fieldset>
         <fieldset>
           <legend>角色卡</legend>
-          <label class="upload-label">上傳 PNG、JSON、Markdown 或文字檔<input id="cardFileInput" type="file" accept=".png,.json,.md,.txt,image/png,application/json,text/plain,text/markdown"></label>
+          <div class="card-tools">
+            <label class="upload-label">上傳檔案<input id="cardFileInput" type="file" accept=".png,.json,.md,.txt,image/png,application/json,text/plain,text/markdown"></label>
+            <button id="exportCardButton" class="small-button" type="button">匯出卡</button>
+          </div>
           <p id="cardStatus" class="status" aria-live="polite">上傳會覆蓋下方欄位；也可以直接手填。</p>
           <div class="field"><label for="characterNameInput">角色名</label><input id="characterNameInput" name="characterName" autocomplete="off"></div>
           <div class="field"><label for="characterDescriptionInput">角色描述</label><textarea id="characterDescriptionInput" name="characterDescription" placeholder="外觀、性格、說話風格"></textarea></div>
           <div class="field"><label for="playerNameInput">玩家稱呼（他怎麼叫你）</label><input id="playerNameInput" name="playerName" value="你" autocomplete="off"></div>
+          <div class="avatar-upload-grid">
+            <label class="upload-label">他的頭像<input id="dealerAvatarInput" type="file" accept="image/*"></label>
+            <label class="upload-label">你的頭像<input id="playerAvatarInput" type="file" accept="image/*"></label>
+          </div>
+          <p id="avatarStatus" class="status" aria-live="polite">頭像會縮至 256 像素後儲存。</p>
         </fieldset>
         <p class="privacy-mini">資料只存在這個瀏覽器的本站儲存空間。牌桌沒有後端，也不會替你傳走金鑰或角色卡。</p>
         <button id="clearButton" class="danger-button" type="button">清除所有資料</button>
@@ -191,7 +213,14 @@
 
   <div id="chatlogOverlay" class="chatlog-overlay" hidden>
     <div class="chatlog-panel" role="dialog" aria-modal="true" aria-labelledby="chatlogTitle">
-      <div class="chatlog-head"><span id="chatlogTitle" class="chatlog-title">本桌對話</span><button class="icon-close" type="button" data-close-chatlog aria-label="關閉">×</button></div>
+      <div class="chatlog-head">
+        <span id="chatlogTitle" class="chatlog-title">本桌對話（0/100）</span>
+        <div class="chatlog-actions">
+          <button id="exportMemoryButton" class="chatlog-tool" type="button">匯出</button>
+          <label class="chatlog-tool">匯入<input id="memoryFileInput" type="file" accept=".png,.json,.md,.txt,image/png,application/json,text/plain,text/markdown"></label>
+          <button class="icon-close" type="button" data-close-chatlog aria-label="關閉">×</button>
+        </div>
+      </div>
       <div id="chatlogBody" class="chatlog-body"></div>
     </div>
   </div>
@@ -209,7 +238,7 @@
       const SETTINGS_KEY = STORE_PREFIX + "settings_v1";
       const RECORD_KEY = STORE_PREFIX + "records_v1";
       const CHAT_KEY = STORE_PREFIX + "chat_v1";
-      const CHAT_CAP = 60;
+      const CHAT_CAP = 100;
       const API_TIMEOUT_MS = 20000;
       const DEALER_DELAY_MS = 480;
 
@@ -271,12 +300,13 @@
       function safeGet(key) { try { return localStorage.getItem(key); } catch (_error) { return null; } }
       function safeSet(key,value) { try { localStorage.setItem(key,value); return true; } catch (_error) { return false; } }
       function readJson(key,fallback) { try { const value = JSON.parse(safeGet(key) || "null"); return value ?? fallback; } catch (_error) { return fallback; } }
-      function readRecords() {
-        const parsed = readJson(RECORD_KEY,null), clean = blankRecords();
+      function normalizeRecords(parsed) {
+        const clean = blankRecords();
         for (const mode of Object.keys(clean)) for (const key of ["you","dealer","push"]) if (Number.isInteger(parsed?.[mode]?.[key]) && parsed[mode][key] >= 0) clean[mode][key] = parsed[mode][key];
         return clean;
       }
-      function defaultSettings() { return { endpoint: "", apiKey: "", model: "", characterName: "", characterDescription: "", playerName: "你", avatarDataUrl: "" }; }
+      function readRecords() { return normalizeRecords(readJson(RECORD_KEY,null)); }
+      function defaultSettings() { return { endpoint: "", apiKey: "", model: "", characterName: "", characterDescription: "", playerName: "你", avatarDataUrl: "", playerAvatarDataUrl: "" }; }
       function readSettings() { return { ...defaultSettings(), ...readJson(SETTINGS_KEY,{}) }; }
       function settingsComplete(value = settings) { return Boolean(value.endpoint.trim() && value.apiKey.trim() && value.model.trim() && value.characterName.trim()); }
       function localDay() { return new Date(Date.now() - new Date().getTimezoneOffset() * 60000 - 4 * 3600 * 1000).toISOString().slice(0,10); }
@@ -344,6 +374,8 @@
         elements.dealerFallback.textContent = Array.from(name)[0] || "莊";
         if (settings.avatarDataUrl) { elements.dealerAvatar.src = settings.avatarDataUrl; elements.dealerAvatar.hidden = false; elements.dealerFallback.hidden = true; }
         else { elements.dealerAvatar.removeAttribute("src"); elements.dealerAvatar.hidden = true; elements.dealerFallback.hidden = false; }
+        if (settings.playerAvatarDataUrl) { elements.playerAvatar.src = settings.playerAvatarDataUrl; elements.playerAvatar.hidden = false; elements.playerFallback.hidden = true; }
+        else { elements.playerAvatar.removeAttribute("src"); elements.playerAvatar.hidden = true; elements.playerFallback.hidden = false; }
         elements.setupNote.textContent = settingsComplete() ? name + " 已就座" : "設定完成後莊家會開口";
         elements.setupNote.classList.toggle("ready",settingsComplete());
       }
@@ -503,19 +535,50 @@
           canvas.getContext("2d").drawImage(image,0,0,canvas.width,canvas.height); return canvas.toDataURL("image/png");
         } finally { URL.revokeObjectURL(source); }
       }
-      function applyParsedCard(parsed,avatarDataUrl = "") {
+      function applyParsedCard(parsed,avatarDataUrl = "",avatarProvided = false) {
         elements.characterNameInput.value = parsed.name || ""; elements.characterDescriptionInput.value = parsed.description || "";
         settings.characterName = elements.characterNameInput.value; settings.characterDescription = elements.characterDescriptionInput.value;
-        if (avatarDataUrl) settings.avatarDataUrl = avatarDataUrl;
-        persistSettings(); return { name: settings.characterName, description: settings.characterDescription, avatarStored: Boolean(settings.avatarDataUrl) };
+        if (avatarProvided) settings.avatarDataUrl = String(avatarDataUrl || "");
+        persistSettings(); return { kind: "card", name: settings.characterName, description: settings.characterDescription, avatarStored: Boolean(settings.avatarDataUrl) };
+      }
+      function importMemoryPackage(raw) {
+        const rows = Array.isArray(raw.chat) ? raw.chat : [];
+        transcript = rows.filter(row => row && (row.who === "you" || row.who === "him")).slice(-CHAT_CAP).map(row => ({ who: row.who, text: String(row.text || ""), d: String(row.d || localDay()), shownAt: -1e9, animated: true, trigger: "restored" }));
+        state.records = normalizeRecords(raw.records);
+        openingSent = transcript.some(row => row.d === localDay()); lastSpokenRound = null;
+        saveChat(); safeSet(RECORD_KEY,JSON.stringify(state.records)); renderTable(); updateChatlogTitle();
+        return { kind: "memory", chatCount: transcript.length, records: JSON.parse(JSON.stringify(state.records)) };
+      }
+      function importJsonPayload(raw) {
+        if (raw?.type === "cartes_memory_v1") return importMemoryPackage(raw);
+        if (raw?.type === "cartes_card_v1") return applyParsedCard({ name: String(raw.name || ""), description: String(raw.description || "") },String(raw.avatarDataUrl || ""),true);
+        return applyParsedCard(normalizeCharacterCard(raw));
       }
       async function parseCardFile(file) {
         const lower = String(file.name || "").toLowerCase(); let parsed, avatar = "";
-        if (lower.endsWith(".png") || file.type === "image/png") { const bytes = await readFileBytes(file); parsed = normalizeCharacterCard(parseTavernPngBytes(bytes)); avatar = await resizeAvatar(file); }
-        else if (lower.endsWith(".json") || file.type === "application/json") parsed = normalizeCharacterCard(JSON.parse(await readFileText(file)));
+        if (lower.endsWith(".png") || file.type === "image/png") { const bytes = await readFileBytes(file); parsed = normalizeCharacterCard(parseTavernPngBytes(bytes)); avatar = await resizeAvatar(file); return applyParsedCard(parsed,avatar,true); }
+        else if (lower.endsWith(".json") || file.type === "application/json") return importJsonPayload(JSON.parse(await readFileText(file)));
         else if (lower.endsWith(".md") || lower.endsWith(".txt") || file.type.startsWith("text/")) parsed = { name: "", description: await readFileText(file) };
         else throw new Error("不支援的檔案格式");
-        return applyParsedCard(parsed,avatar);
+        return applyParsedCard(parsed);
+      }
+      function downloadJson(payload,filename) {
+        const blob = new Blob([JSON.stringify(payload,null,2)],{ type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob), link = document.createElement("a");
+        link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url),0);
+        return filename;
+      }
+      function cardPackage() {
+        persistSettings(); return { type: "cartes_card_v1", name: settings.characterName, description: settings.characterDescription, avatarDataUrl: settings.avatarDataUrl || "" };
+      }
+      function memoryPackage() {
+        return { type: "cartes_memory_v1", chat: transcript.filter(row => row.who === "him" || row.who === "you").slice(-CHAT_CAP).map(row => ({ who: row.who, text: row.text, d: row.d || localDay() })), records: JSON.parse(JSON.stringify(state.records)) };
+      }
+      function exportCard() { const payload = cardPackage(), name = (payload.name.trim() || "角色").replace(/[\\/:*?"<>|]/g,"_"); return downloadJson(payload,name + "_卡.json"); }
+      function exportMemory() { const stamp = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,10).replace(/-/g,""); return downloadJson(memoryPackage(),"牌桌記憶_" + stamp + ".json"); }
+      async function setAvatarFromFile(file,key) {
+        if (!file || !String(file.type || "").startsWith("image/")) throw new Error("請選擇圖片檔");
+        settings[key] = await resizeAvatar(file); safeSet(SETTINGS_KEY,JSON.stringify(settings)); renderIdentity(); return settings[key];
       }
       function formToSettings() {
         return { ...settings, endpoint: elements.endpointInput.value.trim().replace(/\/+$/,""), apiKey: elements.apiKeyInput.value.trim(), model: elements.modelInput.value.trim(), characterName: elements.characterNameInput.value.trim(), characterDescription: elements.characterDescriptionInput.value, playerName: elements.playerNameInput.value.trim() || "你" };
@@ -535,7 +598,7 @@
         if (!skipConfirm && !confirm("清除這張牌桌在本站儲存的金鑰、角色卡、頭像、對話與戰績？")) return false;
         const keys = []; for (let index = 0; index < localStorage.length; index += 1) { const key = localStorage.key(index); if (key?.startsWith(STORE_PREFIX)) keys.push(key); }
         keys.forEach(key => localStorage.removeItem(key));
-        if (apiController) apiController.abort(); settings = defaultSettings(); transcript = []; openingSent = false; lastSpokenRound = null; state.records = blankRecords(); settingsToForm(); renderIdentity(); startRound({ mode: state.mode, skipSpeech: true }); elements.cardStatus.textContent = "本站牌桌資料已清除。"; return true;
+        if (apiController) apiController.abort(); settings = defaultSettings(); transcript = []; openingSent = false; lastSpokenRound = null; state.records = blankRecords(); settingsToForm(); renderIdentity(); startRound({ mode: state.mode, skipSpeech: true }); updateChatlogTitle(); elements.cardStatus.textContent = "本站牌桌資料已清除。"; elements.avatarStatus.textContent = "頭像已清除。"; return true;
       }
       async function loadModels() {
         persistSettings(); elements.modelStatus.textContent = "正在撈清單…"; elements.modelList.replaceChildren();
@@ -552,7 +615,9 @@
         } catch (_error) { elements.modelStatus.textContent = "撈不到，請手填"; return false; }
         finally { clearTimeout(timer); }
       }
+      function updateChatlogTitle() { elements.chatlogTitle.textContent = "本桌對話（" + transcript.filter(row => row.who === "him" || row.who === "you").length + "/" + CHAT_CAP + "）"; }
       function openChatlog() {
+        updateChatlogTitle();
         elements.chatlogBody.replaceChildren(); const entries = transcript.filter(row => row.who === "him" || row.who === "you");
         if (!entries.length) { const empty = document.createElement("p"); empty.className = "cl-empty"; empty.textContent = "這桌還沒說過話。"; elements.chatlogBody.append(empty); }
         let previous = null;
@@ -561,6 +626,17 @@
           const row = document.createElement("div"); row.className = "cl-row " + entry.who; const bubble = document.createElement("div"); bubble.className = "cl-bubble"; bubble.textContent = entry.text; row.append(bubble); elements.chatlogBody.append(row);
         }
         elements.chatlogOverlay.hidden = false; elements.chatlogBody.scrollTop = elements.chatlogBody.scrollHeight;
+      }
+      async function handleImportInput(input) {
+        const file = input.files?.[0]; if (!file) return null;
+        elements.cardStatus.textContent = "正在辨識匯入檔…";
+        try {
+          const result = await parseCardFile(file);
+          if (result.kind === "memory") { elements.cardStatus.textContent = "已還原 " + result.chatCount + " 句對話與戰績。"; if (!elements.chatlogOverlay.hidden) openChatlog(); }
+          else { elements.cardStatus.textContent = "已載入" + (result.name ? "「" + result.name + "」" : "文字角色卡") + "。"; requestOpening(); }
+          return result;
+        } catch (error) { elements.cardStatus.textContent = "匯入失敗：" + error.message; return null; }
+        finally { input.value = ""; }
       }
       function runSelfTest() {
         const deck = createDeck(), codes = deck.map(card => card.code);
@@ -581,9 +657,19 @@
       document.querySelectorAll(".avatar").forEach(button => button.addEventListener("click",openChatlog));
       elements.settingsForm.addEventListener("input",persistSettings);
       elements.settingsForm.addEventListener("change",persistSettings);
+      document.querySelectorAll("[data-endpoint-preset]").forEach(button => button.addEventListener("click",() => {
+        const preset = button.dataset.endpointPreset;
+        elements.endpointInput.value = preset === "google" ? "https://generativelanguage.googleapis.com/v1beta/openai" : preset === "openrouter" ? "https://openrouter.ai/api/v1" : "";
+        persistSettings(); if (preset === "custom") elements.endpointInput.focus();
+      }));
       elements.toggleKeyButton.addEventListener("click",() => { const showing = elements.apiKeyInput.type === "text"; elements.apiKeyInput.type = showing ? "password" : "text"; elements.toggleKeyButton.textContent = showing ? "顯示" : "隱藏"; });
       elements.loadModelsButton.addEventListener("click",() => void loadModels());
-      elements.cardFileInput.addEventListener("change",async () => { const file = elements.cardFileInput.files?.[0]; if (!file) return; elements.cardStatus.textContent = "正在讀卡…"; try { const result = await parseCardFile(file); elements.cardStatus.textContent = "已載入" + (result.name ? "「" + result.name + "」" : "文字角色卡") + "。"; requestOpening(); } catch (error) { elements.cardStatus.textContent = "讀卡失敗：" + error.message; } finally { elements.cardFileInput.value = ""; } });
+      elements.cardFileInput.addEventListener("change",() => void handleImportInput(elements.cardFileInput));
+      elements.memoryFileInput.addEventListener("change",() => void handleImportInput(elements.memoryFileInput));
+      elements.exportCardButton.addEventListener("click",exportCard);
+      elements.exportMemoryButton.addEventListener("click",exportMemory);
+      elements.dealerAvatarInput.addEventListener("change",async () => { const file = elements.dealerAvatarInput.files?.[0]; if (!file) return; elements.avatarStatus.textContent = "正在處理他的頭像…"; try { await setAvatarFromFile(file,"avatarDataUrl"); elements.avatarStatus.textContent = "他的頭像已儲存。"; } catch (error) { elements.avatarStatus.textContent = "頭像失敗：" + error.message; } finally { elements.dealerAvatarInput.value = ""; } });
+      elements.playerAvatarInput.addEventListener("change",async () => { const file = elements.playerAvatarInput.files?.[0]; if (!file) return; elements.avatarStatus.textContent = "正在處理你的頭像…"; try { await setAvatarFromFile(file,"playerAvatarDataUrl"); elements.avatarStatus.textContent = "你的頭像已儲存。"; } catch (error) { elements.avatarStatus.textContent = "頭像失敗：" + error.message; } finally { elements.playerAvatarInput.value = ""; } });
       elements.clearButton.addEventListener("click",() => clearAllData(false));
       elements.settingsOverlay.addEventListener("transitionend",persistSettings);
       document.querySelector("[data-close-settings]").addEventListener("click",() => { persistSettings(); requestOpening(); });
@@ -604,7 +690,7 @@
         setDeck(sequence,mode = state.mode) { return startRound({ deck: sequence, mode, skipSpeech: true }); }, state: snapshot, hit() { return hit(true); }, stand() { return dealerTurn(true,true); },
         setMode(mode) { if (!RULES[mode]) throw new Error("無效的玩法"); return startRound({ mode, skipSpeech: true }); },
         scoreHand, classifyHand, compareHands, createDeck: () => createDeck().map(card => card.code), selfTest: runSelfTest,
-        normalizeCharacterCard, parseTavernPngBytes, parseCardFile, applyParsedCard, loadModels, buildMessages,
+        normalizeCharacterCard, parseTavernPngBytes, parseCardFile, applyParsedCard, importJsonPayload, cardPackage, memoryPackage, exportCard, exportMemory, openChatlog, loadModels, buildMessages,
         setSettings(next) { settings = { ...settings, ...next }; settingsToForm(); persistSettings(); return { ...settings }; },
         clearAllData() { return clearAllData(true); }, requestOpening, requests: () => requestLog.map(log => JSON.parse(JSON.stringify(log)))
       });
