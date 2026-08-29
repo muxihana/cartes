@@ -126,7 +126,6 @@
       <header class="heading">
         <h1>Cartes</h1>
         <button id="settingButton" class="setting-button" type="button">設定</button>
-        <div id="turnBadge" class="turn-badge" aria-live="polite">輪你</div>
       </header>
       <div class="mode-switch" role="group" aria-label="選擇玩法">
         <button class="mode-button" type="button" data-mode="blackjack" aria-pressed="true">21 點</button>
@@ -358,9 +357,10 @@
         const youScore = scoreHand(state.mode,state.youCards), dealerScore = scoreHand(state.mode,visibleDealerCards());
         elements.youPoints.textContent = state.youCards.length ? scoreText(youScore) + " 點" : "";
         elements.dealerPoints.textContent = state.dealerCards.length ? (state.holeRevealed ? scoreText(dealerScore) + " 點" : (visibleDealerCards().length ? "明牌 " + scoreText(dealerScore) + " 點" : "蓋牌")) : "";
-        if (state.phase === "you") { elements.turnBadge.textContent = "輪你"; elements.tableMessage.textContent = "輪你要牌或停牌"; }
-        else if (state.phase === "dealer") { elements.turnBadge.textContent = "莊家補牌"; elements.tableMessage.textContent = "莊家正在補牌"; }
-        else { elements.turnBadge.textContent = "本局結束"; elements.tableMessage.textContent = resultMessage(); }
+        /* 回合藥丸拆除（業主 08-29：桌中提示條已講完一切，藥丸=冗員雙聲道） */
+        if (state.phase === "you") { elements.tableMessage.textContent = "輪你要牌或停牌"; }
+        else if (state.phase === "dealer") { elements.tableMessage.textContent = "莊家正在補牌"; }
+        else { elements.tableMessage.textContent = resultMessage(); }
         elements.hitButton.disabled = state.phase !== "you"; elements.standButton.disabled = state.phase !== "you";
         const record = state.records[state.mode];
         elements.record.innerHTML = "你贏 <strong>" + record.you + "</strong> ／ 莊贏 <strong>" + record.dealer + "</strong> ／ 平 <strong>" + record.push + "</strong>";
