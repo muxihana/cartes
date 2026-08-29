@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="description" content="把角色卡帶上牌桌，陪你玩 21 點或十點半。">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="牌桌">
+  <title>牌桌</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      --ink: #30261f; --muted: #806f65; --paper: #fffaf5;
+      --panel: rgba(255, 252, 248, .94); --line: #ddcdbb;
+      --accent: #b76e79; --accent-dark: #8a5560;
+      --red-suit: #a92525; --black-suit: #252321;
+    }
+    * { box-sizing: border-box; }
+    html, body { touch-action: manipulation; }
+    body { margin: 0; min-height: 100vh; color: var(--ink); background: #f7eef0; }
+    button, select, input, textarea { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    .app { width: min(1120px, 100%); min-height: 100vh; margin: 0 auto; padding: clamp(14px,3vw,34px); display: grid; grid-template-columns: minmax(0,1fr) minmax(245px,320px); align-items: center; gap: clamp(18px,4vw,44px); }
+    .play-area { min-width: 0; }
+    .heading { width: min(690px,100%); margin: 0 auto 10px; display: flex; align-items: center; gap: 10px; }
+    h1 { margin: 0; font-family: "Snell Roundhand","Savoye LET","Segoe Script","Brush Script MT",cursive; font-size: clamp(1.85rem,5vw,2.6rem); line-height: 1; color: var(--accent-dark); }
+    .setting-button, .turn-badge { flex: none; min-height: 34px; padding: 5px 11px; border: 1px solid #d9b2b8; border-radius: 999px; color: #a05f6a; background: #fdf7f8; font-size: .76rem; font-weight: 800; }
+    .setting-button { margin-left: auto; cursor: pointer; }
+    .turn-badge { display: flex; align-items: center; }
+    .mode-switch { width: min(690px,100%); margin: 0 auto 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .mode-button { min-height: 42px; border: 1px solid #d9b2b8; border-radius: 9px; color: var(--ink); background: transparent; cursor: pointer; font-weight: 750; }
+    .mode-button[aria-pressed="true"] { color: #fff; background: var(--accent); }
+    .table-stage { position: relative; width: min(690px,100%); margin: auto; padding: 72px 0 68px; }
+    .card-table { min-height: 348px; padding: clamp(16px,3vw,24px); display: grid; grid-template-rows: minmax(0,1fr) auto minmax(0,1fr); gap: 12px; border: 7px solid #6a493a; border-radius: 44px; background: #d9b7af; box-shadow: 0 14px 34px rgba(72,45,37,.22), inset 0 0 0 1px rgba(255,255,255,.35); }
+    .seat { min-width: 0; display: grid; align-content: center; gap: 7px; }
+    .seat-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: #614d47; font-size: .75rem; font-weight: 800; letter-spacing: .08em; }
+    .points { font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .hand { min-width: 0; min-height: 102px; display: flex; align-items: center; justify-content: safe center; gap: clamp(5px,1.5vw,10px); overflow-x: auto; scrollbar-width: thin; padding: 3px; }
+    .playing-card { position: relative; flex: 0 0 clamp(54px,11vw,72px); height: clamp(82px,17vw,106px); padding: 6px; display: grid; place-items: center; border: 1px solid rgba(55,43,36,.22); border-radius: 9px; background: #fff; box-shadow: 0 3px 9px rgba(68,47,38,.2); font-family: Georgia,"Times New Roman",serif; user-select: none; }
+    .playing-card.red { color: var(--red-suit); } .playing-card.black { color: var(--black-suit); }
+    .card-corner { position: absolute; top: 5px; left: 6px; display: grid; justify-items: center; font-size: clamp(.8rem,2.5vw,1rem); font-weight: 700; line-height: .95; }
+    .card-suit { font-size: clamp(1.6rem,5vw,2.35rem); line-height: 1; }
+    .playing-card.back { overflow: hidden; border: 5px solid #f8eee8; background-color: #4e2438; background-image: repeating-linear-gradient(45deg,transparent 0 6px,rgba(255,255,255,.18) 6px 8px), repeating-linear-gradient(-45deg,transparent 0 6px,rgba(255,255,255,.1) 6px 8px); box-shadow: 0 3px 9px rgba(68,47,38,.25), inset 0 0 0 2px rgba(255,255,255,.4); }
+    .table-message { min-height: 35px; padding: 7px 12px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(122,82,75,.18); border-radius: 999px; color: #6b4d4d; background: rgba(255,249,246,.68); font-size: .84rem; font-weight: 750; text-align: center; }
+    .avatar { position: absolute; z-index: 12; cursor: pointer; width: 50px; height: 50px; overflow: hidden; border: 3px solid #fffaf3; border-radius: 50%; background: #8d796b; box-shadow: 0 3px 12px rgba(48,38,31,.3); }
+    .avatar img, .avatar-fallback { display: block; width: 100%; height: 100%; }
+    .avatar img { object-fit: cover; } .avatar img[hidden] { display: none; }
+    .avatar-fallback { display: grid; place-items: center; color: #fff; background: #bd8d83; font-weight: 800; }
+    .avatar-him { top: 0; left: -5px; } .avatar-you { right: -5px; bottom: 0; }
+    .bubble-stack { position: absolute; z-index: 11; display: flex; width: calc(100% - 68px); pointer-events: none; }
+    .bubble-stack-him { bottom: calc(100% - 66px); left: 61px; flex-direction: column; justify-content: flex-end; align-items: flex-start; }
+    .bubble-stack-you { top: calc(100% - 63px); right: 61px; flex-direction: column; align-items: flex-end; }
+    .coach-bubble, .coach-thinking { width: fit-content; max-width: min(96%,560px); margin: 0 0 5px; padding: 8px 11px; border: 1px solid rgba(122,95,73,.18); border-radius: 5px 13px 13px 13px; color: #3b3028; background: rgba(255,250,243,.96); box-shadow: 0 2px 9px rgba(72,51,36,.18); font-size: .84rem; line-height: 1.5; transform-origin: 0 0; }
+    .coach-bubble.you { border-radius: 13px 5px 13px 13px; color: #553c42; background: rgba(240,224,226,.97); transform-origin: 100% 100%; }
+    .coach-bubble.pop, .coach-thinking { animation: coach-pop .22s ease-out both; }
+    .coach-thinking { display: flex; align-items: center; color: var(--muted); }
+    @keyframes coach-pop { from { opacity: 0; transform: scale(.84); } to { opacity: 1; transform: scale(1); } }
+    .thinking-dots { display: inline-flex; gap: 3px; }
+    .thinking-dots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: coach-dot 1.1s infinite ease-in-out; }
+    .thinking-dots i:nth-child(2) { animation-delay: .15s; } .thinking-dots i:nth-child(3) { animation-delay: .3s; }
+    @keyframes coach-dot { 0%,70%,100% { transform: translateY(0); opacity: .35; } 35% { transform: translateY(-3px); opacity: 1; } }
+    .chat-row { width: min(690px,100%); margin: 0 auto 12px; display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 8px; }
+    .chat-row input { min-width: 0; min-height: 44px; padding: 8px 11px; border: 1px solid #bca790; border-radius: 10px; color: var(--ink); background: #fffaf3; font-size: 16px; }
+    .chat-row button { min-width: 62px; min-height: 42px; padding: 7px 11px; border: 1px solid #a05f6a; border-radius: 10px; color: #fff; background: var(--accent); cursor: pointer; font-weight: 800; }
+    .chat-row input:disabled, .chat-row button:disabled { cursor: not-allowed; opacity: .5; }
+    .actions { width: min(690px,100%); margin: 0 auto 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .action { min-height: 44px; border: 1px solid #a05f6a; border-radius: 9px; color: #fff; background: var(--accent); cursor: pointer; font-weight: 800; }
+    .action.secondary { color: #8a5560; background: transparent; } .action.wide { grid-column: 1/-1; } .action:disabled { cursor: not-allowed; opacity: .42; }
+    .panel { min-width: 0; padding: clamp(16px,2.6vw,24px); border: 1px solid rgba(122,95,73,.2); border-radius: 14px; background: var(--panel); box-shadow: 0 9px 28px rgba(72,51,36,.12); }
+    .panel h2 { margin: 0 0 9px; color: var(--muted); font-size: .78rem; letter-spacing: .12em; }
+    .record { margin: 0 0 16px; padding: 11px 12px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted); font-size: .8rem; line-height: 1.7; }
+    .record strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .rule-note, .setup-note { color: var(--muted); font-size: .8rem; line-height: 1.55; }
+    .setup-note { padding: 10px 11px; border-radius: 9px; background: #f9edf0; color: #7b5159; }
+    .setup-note.ready { background: #edf5ee; color: #4e6d52; }
+    .chatlog-overlay, .drawer-overlay { position: fixed; inset: 0; z-index: 60; display: flex; background: rgba(58,44,34,.32); }
+    .chatlog-overlay { align-items: center; justify-content: center; } .chatlog-overlay[hidden], .drawer-overlay[hidden] { display: none; }
+    .chatlog-panel { display: flex; flex-direction: column; width: min(440px,92vw); max-height: 74vh; border-radius: 16px; border: 1px solid rgba(122,95,73,.25); overflow: hidden; background: rgba(251,246,237,.97); box-shadow: 0 18px 44px rgba(48,38,31,.3); }
+    .chatlog-head, .drawer-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 10px 18px; border-bottom: 1px solid rgba(122,95,73,.12); }
+    .chatlog-body { flex: 1; overflow-y: auto; padding: 8px 16px 18px; }
+    .icon-close { width: 32px; height: 32px; border: 0; border-radius: 50%; background: rgba(183,110,121,.16); color: #8a5560; cursor: pointer; }
+    .chatlog-title { font-size: .78rem; letter-spacing: .18em; color: #a08a8d; }
+    .cl-row { display: flex; margin: 7px 0; } .cl-row.you { justify-content: flex-end; }
+    .cl-bubble { max-width: 82%; padding: 8px 11px; font-size: .9rem; line-height: 1.55; border: 1px solid rgba(122,95,73,.16); }
+    .cl-row.him .cl-bubble { background: #fff; border-radius: 4px 13px 13px 13px; }
+    .cl-row.you .cl-bubble { background: #f0e0e2; border-radius: 13px 4px 13px 13px; }
+    .cl-empty { text-align: center; color: #a08a8d; font-size: .85rem; padding: 20px 0; }
+    .cl-day { text-align: center; color: #a08a8d; font-size: .7rem; letter-spacing: .1em; margin: 12px 0 4px; }
+    .drawer-overlay { justify-content: flex-end; }
+    .drawer { width: min(480px,100%); height: 100%; overflow-y: auto; background: #fffaf5; box-shadow: -12px 0 36px rgba(48,38,31,.2); }
+    .drawer-head { position: sticky; top: 0; z-index: 2; background: #fffaf5; }
+    .drawer-head h2 { margin: 0; color: var(--accent-dark); }
+    .settings-form { padding: 18px; display: grid; gap: 15px; }
+    fieldset { margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 11px; }
+    legend { padding: 0 6px; color: var(--accent-dark); font-weight: 800; }
+    .field { display: grid; gap: 5px; margin-bottom: 11px; } .field:last-child { margin-bottom: 0; }
+    .field label { font-size: .8rem; color: var(--muted); font-weight: 750; }
+    .field input, .field textarea { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #bca790; border-radius: 8px; color: var(--ink); background: #fff; font-size: 16px; }
+    .field textarea { min-height: 180px; resize: vertical; line-height: 1.5; }
+    .inline { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; align-items: stretch; }
+    .small-button, .danger-button, .upload-label { min-height: 40px; padding: 7px 11px; border: 1px solid #b9828a; border-radius: 8px; color: #87525b; background: #fff; cursor: pointer; font-weight: 750; }
+    .upload-label { display: grid; place-items: center; text-align: center; }
+    .upload-label input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .danger-button { color: #8c3232; border-color: #c99191; }
+    .status { min-height: 1.5em; margin: 0; color: var(--muted); font-size: .8rem; }
+    .privacy-mini { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.55; }
+    @media (prefers-reduced-motion: reduce) { .thinking-dots i, .coach-bubble, .coach-thinking { animation: none; } }
+    @media (max-width: 760px) { .app { min-height: auto; display: block; padding: 12px; } .heading,.table-stage,.chat-row,.mode-switch,.actions { width: min(94vw,620px); } .panel { width: min(94vw,620px); margin: 14px auto 0; } .card-table { min-height: 330px; border-width: 6px; border-radius: 34px; } }
+    @media (max-width: 410px) { .heading { gap: 6px; } .setting-button,.turn-badge { padding-inline: 8px; } .table-stage { padding-top: 68px; padding-bottom: 64px; } .card-table { min-height: 310px; padding: 13px; } .hand { min-height: 91px; } .chat-row { gap: 6px; } .chat-row button { min-width: 52px; padding-inline: 7px; } }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="play-area" aria-label="牌桌區">
+      <header class="heading">
+        <h1>Cartes</h1>
+        <button id="settingButton" class="setting-button" type="button">設定</button>
+        <div id="turnBadge" class="turn-badge" aria-live="polite">輪你</div>
+      </header>
+      <div class="mode-switch" role="group" aria-label="選擇玩法">
+        <button class="mode-button" type="button" data-mode="blackjack" aria-pressed="true">21 點</button>
+        <button class="mode-button" type="button" data-mode="tenhalf" aria-pressed="false">十點半</button>
+      </div>
+      <div id="tableStage" class="table-stage">
+        <button class="avatar avatar-him" type="button" aria-label="開啟本桌對話">
+          <img id="dealerAvatar" alt="">
+          <span id="dealerFallback" class="avatar-fallback">莊</span>
+        </button>
+        <div id="himBubbleStack" class="bubble-stack bubble-stack-him" aria-live="polite"></div>
+        <div class="card-table">
+          <section class="seat" aria-label="莊家的牌">
+            <div class="seat-label"><span id="dealerLabel">莊家</span><span id="dealerPoints" class="points"></span></div>
+            <div id="dealerHand" class="hand"></div>
+          </section>
+          <div id="tableMessage" class="table-message" aria-live="polite">輪你要牌或停牌</div>
+          <section class="seat" aria-label="你的牌">
+            <div class="seat-label"><span>你</span><span id="youPoints" class="points"></span></div>
+            <div id="youHand" class="hand"></div>
+          </section>
+        </div>
+        <div id="youBubbleStack" class="bubble-stack bubble-stack-you" aria-live="polite"></div>
+        <button class="avatar avatar-you" type="button" aria-label="開啟本桌對話"><span class="avatar-fallback">你</span></button>
+      </div>
+      <form id="chatForm" class="chat-row" autocomplete="off">
+        <label class="sr-only" for="chatInput">跟莊家說話</label>
+        <input id="chatInput" maxlength="300" placeholder="輸入訊息" inputmode="text">
+        <button id="chatSendButton" type="submit">送出</button>
+        <button id="helpButton" type="button">求救</button>
+      </form>
+      <div class="actions">
+        <button id="hitButton" class="action" type="button">要牌</button>
+        <button id="standButton" class="action secondary" type="button">停牌</button>
+        <button id="newGameButton" class="action secondary wide" type="button">新局</button>
+      </div>
+    </section>
+    <aside class="panel" aria-label="牌局帳">
+      <h2>本模式戰績</h2>
+      <p id="record" class="record">你贏 <strong>0</strong> ／ 莊贏 <strong>0</strong> ／ 平 <strong>0</strong></p>
+      <p id="setupNote" class="setup-note">設定完成後莊家會開口</p>
+      <p id="ruleNote" class="rule-note"></p>
+    </aside>
+  </main>
+
+  <div id="settingsOverlay" class="drawer-overlay" hidden>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <header class="drawer-head"><h2 id="settingsTitle">牌桌設定</h2><button class="icon-close" type="button" data-close-settings aria-label="關閉">×</button></header>
+      <form id="settingsForm" class="settings-form">
+        <fieldset>
+          <legend>API</legend>
+          <div class="field"><label for="endpointInput">端點網址</label><input id="endpointInput" name="endpoint" autocomplete="url"></div>
+          <div class="field"><label for="apiKeyInput">金鑰</label><div class="inline"><input id="apiKeyInput" name="apiKey" type="password" autocomplete="off"><button id="toggleKeyButton" class="small-button" type="button">顯示</button></div></div>
+          <div class="field"><label for="modelInput">模型名</label><div class="inline"><input id="modelInput" name="model" list="modelList" autocomplete="off"><button id="loadModelsButton" class="small-button" type="button">撈清單</button></div><datalist id="modelList"></datalist></div>
+          <p id="modelStatus" class="status" aria-live="polite"></p>
+        </fieldset>
+        <fieldset>
+          <legend>角色卡</legend>
+          <label class="upload-label">上傳 PNG、JSON、Markdown 或文字檔<input id="cardFileInput" type="file" accept=".png,.json,.md,.txt,image/png,application/json,text/plain,text/markdown"></label>
+          <p id="cardStatus" class="status" aria-live="polite">上傳會覆蓋下方欄位；也可以直接手填。</p>
+          <div class="field"><label for="characterNameInput">角色名</label><input id="characterNameInput" name="characterName" autocomplete="off"></div>
+          <div class="field"><label for="characterDescriptionInput">角色描述</label><textarea id="characterDescriptionInput" name="characterDescription" placeholder="外觀、性格、說話風格"></textarea></div>
+          <div class="field"><label for="playerNameInput">玩家稱呼（他怎麼叫你）</label><input id="playerNameInput" name="playerName" value="你" autocomplete="off"></div>
+        </fieldset>
+        <p class="privacy-mini">資料只存在這個瀏覽器的本站儲存空間。牌桌沒有後端，也不會替你傳走金鑰或角色卡。</p>
+        <button id="clearButton" class="danger-button" type="button">清除所有資料</button>
+      </form>
+    </aside>
+  </div>
+
+  <div id="chatlogOverlay" class="chatlog-overlay" hidden>
+    <div class="chatlog-panel" role="dialog" aria-modal="true" aria-labelledby="chatlogTitle">
+      <div class="chatlog-head"><span id="chatlogTitle" class="chatlog-title">本桌對話</span><button class="icon-close" type="button" data-close-chatlog aria-label="關閉">×</button></div>
+      <div id="chatlogBody" class="chatlog-body"></div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+      const RULES = Object.freeze({
+        blackjack: Object.freeze({ label: "21 點", limit: 21, dealerStand: 17, openingCards: 2 }),
+        tenhalf: Object.freeze({ label: "十點半", limit: 10.5, dealerStand: 8, openingCards: 1 })
+      });
+      const SUITS = Object.freeze(["♠","♥","♦","♣"]);
+      const RANKS = Object.freeze(["A","2","3","4","5","6","7","8","9","10","J","Q","K"]);
+      const STORE_PREFIX = "publicCardTable_";
+      const SETTINGS_KEY = STORE_PREFIX + "settings_v1";
+      const RECORD_KEY = STORE_PREFIX + "records_v1";
+      const CHAT_KEY = STORE_PREFIX + "chat_v1";
+      const CHAT_CAP = 60;
+      const API_TIMEOUT_MS = 20000;
+      const DEALER_DELAY_MS = 480;
+
+      function parseCard(value) {
+        const text = String(value || "").trim();
+        const suit = text.slice(0,1), rank = text.slice(1).toUpperCase();
+        if (!SUITS.includes(suit) || !RANKS.includes(rank)) throw new Error("無效的牌：" + text);
+        return Object.freeze({ suit, rank, code: suit + rank });
+      }
+      function createDeck() { return SUITS.flatMap(suit => RANKS.map(rank => Object.freeze({ suit, rank, code: suit + rank }))); }
+      function shuffledDeck() {
+        const deck = createDeck().slice();
+        for (let index = deck.length - 1; index > 0; index -= 1) { const target = Math.floor(Math.random() * (index + 1)); [deck[index],deck[target]] = [deck[target],deck[index]]; }
+        return deck;
+      }
+      function scoreHand(mode, cards) {
+        const list = cards.map(card => typeof card === "string" ? parseCard(card) : card);
+        if (mode === "blackjack") {
+          let total = 0, highAces = 0;
+          for (const card of list) {
+            if (card.rank === "A") { total += 11; highAces += 1; }
+            else if (["J","Q","K"].includes(card.rank)) total += 10;
+            else total += Number(card.rank);
+          }
+          while (total > 21 && highAces > 0) { total -= 10; highAces -= 1; }
+          return Object.freeze({ total, soft: highAces > 0, bust: total > 21 });
+        }
+        const total = list.reduce((sum,card) => card.rank === "A" ? sum + 1 : ["J","Q","K"].includes(card.rank) ? sum + .5 : sum + Number(card.rank), 0);
+        return Object.freeze({ total, soft: false, bust: total > 10.5 });
+      }
+      function classifyHand(mode, cards) {
+        const score = scoreHand(mode,cards);
+        if (score.bust) return Object.freeze({ kind: "bust", rank: 0, score });
+        if (mode === "blackjack" && cards.length === 2 && score.total === 21) return Object.freeze({ kind: "blackjack", rank: 2, score });
+        if (mode === "tenhalf" && score.total === 10.5) return Object.freeze({ kind: "tenhalf", rank: 3, score });
+        if (mode === "tenhalf" && cards.length === 5) return Object.freeze({ kind: "fivedragon", rank: 2, score });
+        return Object.freeze({ kind: "points", rank: 1, score });
+      }
+      function compareHands(mode,youCards,dealerCards) {
+        const you = classifyHand(mode,youCards), dealer = classifyHand(mode,dealerCards);
+        let outcome = "push";
+        if (you.rank !== dealer.rank) outcome = you.rank > dealer.rank ? "you" : "dealer";
+        else if (you.score.total !== dealer.score.total) outcome = you.score.total > dealer.score.total ? "you" : "dealer";
+        let special = "";
+        if (you.kind === "bust") special = "youbust";
+        else if (dealer.kind === "bust") special = "dealerbust";
+        else if (you.kind === "blackjack" || dealer.kind === "blackjack") special = "blackjack";
+        else if (you.kind === "tenhalf" || dealer.kind === "tenhalf") special = "tenhalf";
+        else if (you.kind === "fivedragon" || dealer.kind === "fivedragon") special = "fivedragon";
+        return Object.freeze({ outcome, special, you, dealer });
+      }
+      function shouldDealerDraw(mode,cards) { const hand = classifyHand(mode,cards); return hand.kind === "points" && hand.score.total < RULES[mode].dealerStand; }
+      function simulateDealer(mode,initialCards,drawCards) {
+        const cards = initialCards.map(parseCard), deck = drawCards.map(parseCard), trace = [scoreHand(mode,cards).total];
+        while (shouldDealerDraw(mode,cards) && deck.length) { cards.push(deck.shift()); trace.push(scoreHand(mode,cards).total); }
+        return Object.freeze({ cards: cards.map(card => card.code), trace, stopped: !shouldDealerDraw(mode,cards) });
+      }
+      function blankRecords() { return { blackjack: { you: 0, dealer: 0, push: 0 }, tenhalf: { you: 0, dealer: 0, push: 0 } }; }
+      function safeGet(key) { try { return localStorage.getItem(key); } catch (_error) { return null; } }
+      function safeSet(key,value) { try { localStorage.setItem(key,value); return true; } catch (_error) { return false; } }
+      function readJson(key,fallback) { try { const value = JSON.parse(safeGet(key) || "null"); return value ?? fallback; } catch (_error) { return fallback; } }
+      function readRecords() {
+        const parsed = readJson(RECORD_KEY,null), clean = blankRecords();
+        for (const mode of Object.keys(clean)) for (const key of ["you","dealer","push"]) if (Number.isInteger(parsed?.[mode]?.[key]) && parsed[mode][key] >= 0) clean[mode][key] = parsed[mode][key];
+        return clean;
+      }
+      function defaultSettings() { return { endpoint: "", apiKey: "", model: "", characterName: "", characterDescription: "", playerName: "你", avatarDataUrl: "" }; }
+      function readSettings() { return { ...defaultSettings(), ...readJson(SETTINGS_KEY,{}) }; }
+      function settingsComplete(value = settings) { return Boolean(value.endpoint.trim() && value.apiKey.trim() && value.model.trim() && value.characterName.trim()); }
+      function localDay() { return new Date(Date.now() - new Date().getTimezoneOffset() * 60000 - 4 * 3600 * 1000).toISOString().slice(0,10); }
+
+      const elements = Object.fromEntries(Array.from(document.querySelectorAll("[id]")).map(node => [node.id,node]));
+      const state = { mode: "blackjack", phase: "you", deck: [], youCards: [], dealerCards: [], holeRevealed: false, result: null, records: readRecords(), roundNo: 0, dealerTimer: null };
+      let settings = readSettings();
+      let transcript = [];
+      let openingSent = false;
+      let lastSpokenRound = null;
+      let apiThinking = false;
+      let apiController = null;
+      let chatSending = false;
+      const requestLog = [];
+
+      function restoreChat() {
+        const rows = readJson(CHAT_KEY,[]);
+        if (!Array.isArray(rows)) return;
+        transcript = rows.slice(-CHAT_CAP).map(row => ({ who: row.who === "you" ? "you" : "him", text: String(row.text || ""), d: row.d || localDay(), shownAt: -1e9, animated: true, trigger: "restored" }));
+        if (transcript.some(row => row.d === localDay())) openingSent = true;
+      }
+      function saveChat() { safeSet(CHAT_KEY,JSON.stringify(transcript.filter(row => row.who === "him" || row.who === "you").slice(-CHAT_CAP).map(row => ({ who: row.who, text: row.text, d: row.d || localDay() })))); }
+      function scoreText(score) { return state.mode === "blackjack" && score.soft && !score.bust ? "soft " + score.total : String(score.total); }
+      function visibleDealerCards() { if (state.holeRevealed) return state.dealerCards.slice(); return state.mode === "blackjack" ? state.dealerCards.slice(0,1) : []; }
+      function isDealerCardHidden(index) { if (state.holeRevealed) return false; return state.mode === "blackjack" ? index === 1 : index === 0; }
+      function drawCard() { const card = state.deck.shift(); if (!card) throw new Error("牌堆已空"); return card; }
+      function makeCardElement(card,hidden) {
+        const item = document.createElement("div");
+        item.className = hidden ? "playing-card back" : "playing-card " + (["♥","♦"].includes(card.suit) ? "red" : "black");
+        item.setAttribute("role","img"); item.setAttribute("aria-label",hidden ? "蓋牌" : card.code);
+        if (!hidden) {
+          const corner = document.createElement("span"); corner.className = "card-corner";
+          const rank = document.createElement("span"); rank.textContent = card.rank;
+          const cornerSuit = document.createElement("span"); cornerSuit.textContent = card.suit;
+          const suit = document.createElement("span"); suit.className = "card-suit"; suit.textContent = card.suit;
+          corner.append(rank,cornerSuit); item.append(corner,suit);
+        }
+        return item;
+      }
+      function resultMessage() {
+        if (!state.result) return "";
+        const labels = { you: "你贏了", dealer: "莊家贏了", push: "這局平手" };
+        const specials = { blackjack: "Blackjack", tenhalf: "十點半", fivedragon: "五龍", youbust: "你爆牌", dealerbust: "莊家爆牌" };
+        return (specials[state.result.special] ? specials[state.result.special] + "，" : "") + labels[state.result.outcome];
+      }
+      function renderTable() {
+        elements.dealerHand.replaceChildren(...state.dealerCards.map((card,index) => makeCardElement(card,isDealerCardHidden(index))));
+        elements.youHand.replaceChildren(...state.youCards.map(card => makeCardElement(card,false)));
+        const youScore = scoreHand(state.mode,state.youCards), dealerScore = scoreHand(state.mode,visibleDealerCards());
+        elements.youPoints.textContent = state.youCards.length ? scoreText(youScore) + " 點" : "";
+        elements.dealerPoints.textContent = state.dealerCards.length ? (state.holeRevealed ? scoreText(dealerScore) + " 點" : (visibleDealerCards().length ? "明牌 " + scoreText(dealerScore) + " 點" : "蓋牌")) : "";
+        if (state.phase === "you") { elements.turnBadge.textContent = "輪你"; elements.tableMessage.textContent = "輪你要牌或停牌"; }
+        else if (state.phase === "dealer") { elements.turnBadge.textContent = "莊家補牌"; elements.tableMessage.textContent = "莊家正在補牌"; }
+        else { elements.turnBadge.textContent = "本局結束"; elements.tableMessage.textContent = resultMessage(); }
+        elements.hitButton.disabled = state.phase !== "you"; elements.standButton.disabled = state.phase !== "you";
+        const record = state.records[state.mode];
+        elements.record.innerHTML = "你贏 <strong>" + record.you + "</strong> ／ 莊贏 <strong>" + record.dealer + "</strong> ／ 平 <strong>" + record.push + "</strong>";
+        document.querySelectorAll(".mode-button").forEach(button => button.setAttribute("aria-pressed",String(button.dataset.mode === state.mode)));
+        elements.ruleNote.textContent = state.mode === "blackjack" ? "A 自動取 1 或 11。莊家補到 17 點停牌，soft 17 也停。" : "J、Q、K 各算半點。十點半最大，五龍次之；莊家補到 8 點停牌。";
+        renderConversation();
+      }
+      function renderIdentity() {
+        const name = settings.characterName.trim() || "莊家";
+        elements.dealerLabel.textContent = name;
+        elements.dealerFallback.textContent = Array.from(name)[0] || "莊";
+        if (settings.avatarDataUrl) { elements.dealerAvatar.src = settings.avatarDataUrl; elements.dealerAvatar.hidden = false; elements.dealerFallback.hidden = true; }
+        else { elements.dealerAvatar.removeAttribute("src"); elements.dealerAvatar.hidden = true; elements.dealerFallback.hidden = false; }
+        elements.setupNote.textContent = settingsComplete() ? name + " 已就座" : "設定完成後莊家會開口";
+        elements.setupNote.classList.toggle("ready",settingsComplete());
+      }
+      function renderConversation() {
+        elements.chatInput.disabled = apiThinking || chatSending;
+        elements.chatSendButton.disabled = apiThinking || chatSending;
+        elements.helpButton.disabled = apiThinking || state.phase !== "you";
+        elements.himBubbleStack.replaceChildren(); elements.youBubbleStack.replaceChildren();
+        let visible = [];
+        if (transcript.length) {
+          const now = performance.now(), recent = transcript.slice(-3).filter(entry => now - entry.shownAt < 8000), last = transcript.at(-1);
+          visible = recent.includes(last) ? recent : recent.concat(last);
+          if (visible.length > 1) { clearTimeout(renderConversation.fadeTimer); renderConversation.fadeTimer = setTimeout(renderConversation,8200); }
+        }
+        for (const entry of visible) {
+          const bubble = document.createElement("div"); bubble.className = "coach-bubble " + entry.who + (entry.animated ? "" : " pop"); bubble.textContent = entry.text; entry.animated = true;
+          (entry.who === "you" ? elements.youBubbleStack : elements.himBubbleStack).append(bubble);
+        }
+        if (apiThinking) {
+          const thinking = document.createElement("div"); thinking.className = "coach-thinking"; thinking.setAttribute("aria-label","對面在想話");
+          const dots = document.createElement("span"); dots.className = "thinking-dots"; dots.setAttribute("aria-hidden","true"); dots.innerHTML = "<i></i><i></i><i></i>"; thinking.append(dots); elements.himBubbleStack.append(thinking);
+        }
+      }
+      function tableStub(extra = {}) {
+        const visible = visibleDealerCards(), record = state.records[state.mode];
+        const parts = ["規則：" + RULES[state.mode].label];
+        if (state.youCards.length) parts.push("玩家的牌：" + state.youCards.map(card => card.code).join(" ") + "（" + scoreText(scoreHand(state.mode,state.youCards)) + " 點）");
+        if (visible.length) parts.push("莊家明牌：" + visible.map(card => card.code).join(" ") + "（" + scoreText(scoreHand(state.mode,visible)) + " 點）");
+        parts.push("戰績：玩家贏" + record.you + "／莊家贏" + record.dealer + "／平" + record.push);
+        return { ...extra, stub: parts.join("；") };
+      }
+      function buildTrigger(trigger,extra = {}) {
+        const b = tableStub(extra);
+        if (trigger === "opening") return "【牌桌時機】玩家剛坐上牌桌，你發了第一局的牌（" + b.stub + "）。開場說句話——你是莊家，開個盤口的氣勢或損玩家一句都行。";
+        if (trigger === "result") {
+          const outcome = b.outcome === "you" ? "這局玩家贏了" : b.outcome === "dealer" ? "這局你（莊家）贏了" : "這局平手";
+          const special = { blackjack: "出現開局兩張直接 Blackjack", tenhalf: "出現正好十點半（最大牌型）", fivedragon: "出現五龍（五張沒爆）", youbust: "玩家要牌過頭爆掉了", dealerbust: "你補牌補爆了" }[b.special] || "";
+          return "【牌桌時機】" + outcome + (special ? "——" + special : "") + "（" + b.stub + "）。回應結果，至多兩句。";
+        }
+        if (trigger === "hint") return "【求救】玩家按了求救，在糾結這手要不要牌（" + b.stub + "）。你是莊家，玩家居然問莊家——這件事本身就可以玩。給真心建議（照機率白話講該不該要），順口虧一句立場問題。";
+        if (trigger === "chat") return "【牌桌閒聊】玩家邊玩邊跟你說：" + JSON.stringify(String(b.text || "").slice(0,500)) + "（" + b.stub + "）。回話——可以聊、可以講牌，但別自顧自上課。";
+        return "【牌桌時機】（" + b.stub + "）。順著牌局說句話。";
+      }
+      function buildMessages(trigger,extra = {}) {
+        const player = settings.playerName.trim() || "你";
+        const card = settings.characterDescription.trim() || "（角色卡沒有補充描述）";
+        const scene = "【角色卡】\n角色名：" + settings.characterName.trim() + "\n" + card + "\n\n【牌桌場景】\n你是" + settings.characterName.trim() + "，正在跟" + player + "面對面玩撲克比大小，你當莊家。用這個角色的口吻說話。規則玩家大致會；你負責發牌、看對方糾結、回應輸贏。相處模式只依角色卡，不自行預設關係。\n\n【輸出規則（最高優先）】\n- 輸出只有台詞本文，零其他；至多兩句，一句能講完就一句。\n- 禁 markdown、表情符號、顏文字、引號包台詞、動作描寫與旁白。\n- 牌局資訊是小抄：禁逐字複誦，禁報一長串牌面。\n- 同一個梗不要重複。";
+        const messages = [{ role: "system", content: scene }];
+        for (const row of transcript.filter(entry => entry.who === "him").slice(-12)) messages.push({ role: "assistant", content: row.text });
+        messages.push({ role: "user", content: buildTrigger(trigger,extra) });
+        return messages;
+      }
+      function endpointPath(suffix) { return settings.endpoint.trim().replace(/\/+$/,"") + suffix; }
+      async function askDealer(trigger,extra = {}) {
+        if (!settingsComplete()) return false;
+        const controller = new AbortController(); apiController = controller; apiThinking = true; renderConversation();
+        const url = endpointPath("/chat/completions"), messages = buildMessages(trigger,extra);
+        const body = { model: settings.model.trim(), messages, stream: false, max_tokens: 400 };
+        const log = { trigger, roundNo: state.roundNo, url, headers: { Authorization: "Bearer " + settings.apiKey.trim(), "Content-Type": "application/json" }, body: JSON.parse(JSON.stringify(body)), ok: false };
+        requestLog.push(log);
+        const timer = setTimeout(() => controller.abort(),API_TIMEOUT_MS);
+        try {
+          const response = await fetch(url,{ method: "POST", headers: log.headers, body: JSON.stringify(body), signal: controller.signal });
+          if (!response.ok) return false;
+          const data = await response.json();
+          const text = String(data?.choices?.[0]?.message?.content || "").trim();
+          if (!text) return false;
+          transcript.push({ who: "him", text, d: localDay(), shownAt: performance.now(), animated: false, trigger });
+          transcript = transcript.slice(-CHAT_CAP); saveChat(); lastSpokenRound = state.roundNo; log.ok = true; renderConversation(); return true;
+        } catch (_error) { return false; }
+        finally { clearTimeout(timer); if (apiController === controller) apiController = null; apiThinking = false; renderConversation(); }
+      }
+      function requestOpening() { if (openingSent || !settingsComplete()) return false; openingSent = true; void askDealer("opening"); return true; }
+      function requestResult() { const special = state.result?.special || "", farEnough = lastSpokenRound === null || state.roundNo - lastSpokenRound >= 2; if (!special && !farEnough) return false; void askDealer("result",{ outcome: state.result.outcome, special }); return true; }
+      function settleRound(result = compareHands(state.mode,state.youCards,state.dealerCards),skipSpeech = false) {
+        if (state.phase === "ended") return state.result;
+        clearTimeout(state.dealerTimer); state.holeRevealed = true; state.phase = "ended"; state.result = result; state.records[state.mode][result.outcome] += 1; safeSet(RECORD_KEY,JSON.stringify(state.records)); renderTable();
+        if (!skipSpeech) requestResult(); return state.result;
+      }
+      function dealerTurn(instant = false,skipSpeech = false) {
+        if (state.phase === "ended") return state.result;
+        state.phase = "dealer"; state.holeRevealed = true; renderTable();
+        const step = () => {
+          if (!shouldDealerDraw(state.mode,state.dealerCards)) return settleRound(compareHands(state.mode,state.youCards,state.dealerCards),skipSpeech);
+          state.dealerCards.push(drawCard()); renderTable();
+          const dealer = classifyHand(state.mode,state.dealerCards);
+          if (dealer.kind !== "points" || !shouldDealerDraw(state.mode,state.dealerCards)) return settleRound(compareHands(state.mode,state.youCards,state.dealerCards),skipSpeech);
+          state.dealerTimer = setTimeout(step,DEALER_DELAY_MS); return null;
+        };
+        if (instant) { while (shouldDealerDraw(state.mode,state.dealerCards)) state.dealerCards.push(drawCard()); return settleRound(compareHands(state.mode,state.youCards,state.dealerCards),skipSpeech); }
+        state.dealerTimer = setTimeout(step,DEALER_DELAY_MS); return null;
+      }
+      function hit(skipSpeech = false) {
+        if (state.phase !== "you") return null;
+        state.youCards.push(drawCard()); const hand = classifyHand(state.mode,state.youCards); renderTable();
+        if (hand.kind === "bust") return settleRound(compareHands(state.mode,state.youCards,state.dealerCards),skipSpeech);
+        if (state.mode === "tenhalf" && (hand.kind === "tenhalf" || hand.kind === "fivedragon")) return dealerTurn(skipSpeech,skipSpeech);
+        return null;
+      }
+      function startRound(options = {}) {
+        clearTimeout(state.dealerTimer); if (apiController && options.skipSpeech) apiController.abort();
+        state.mode = options.mode || state.mode; state.phase = "you"; state.deck = options.deck ? options.deck.map(parseCard) : shuffledDeck(); state.youCards = []; state.dealerCards = []; state.holeRevealed = false; state.result = null; state.roundNo += 1;
+        if (state.mode === "blackjack") { state.youCards.push(drawCard()); state.dealerCards.push(drawCard()); state.youCards.push(drawCard()); state.dealerCards.push(drawCard()); }
+        else { state.youCards.push(drawCard()); state.dealerCards.push(drawCard()); }
+        renderTable();
+        if (classifyHand(state.mode,state.youCards).kind === "blackjack") settleRound(compareHands(state.mode,state.youCards,state.dealerCards),Boolean(options.skipSpeech));
+        if (!options.skipSpeech) setTimeout(requestOpening,0);
+        return snapshot();
+      }
+      function snapshot() { return Object.freeze({ mode: state.mode, phase: state.phase, youCards: state.youCards.map(card => card.code), dealerCards: state.dealerCards.map(card => card.code), visibleDealerCards: visibleDealerCards().map(card => card.code), youPoints: scoreText(scoreHand(state.mode,state.youCards)), dealerPoints: scoreText(scoreHand(state.mode,state.dealerCards)), holeRevealed: state.holeRevealed, deck: state.deck.map(card => card.code), result: state.result ? { outcome: state.result.outcome, special: state.result.special } : null, records: JSON.parse(JSON.stringify(state.records)), settings: { ...settings, apiKey: settings.apiKey ? "(set)" : "" }, requests: requestLog.map(log => JSON.parse(JSON.stringify(log))), transcript: transcript.map(row => ({ ...row })) }); }
+
+      function flattenObject(value,prefix = "",out = []) {
+        if (value === null || value === undefined) return out;
+        if (typeof value !== "object") { out.push((prefix ? prefix + ": " : "") + String(value)); return out; }
+        if (Array.isArray(value)) { value.forEach((item,index) => flattenObject(item,prefix ? prefix + "[" + index + "]" : String(index),out)); return out; }
+        Object.entries(value).forEach(([key,item]) => flattenObject(item,prefix ? prefix + "." + key : key,out)); return out;
+      }
+      function normalizeCharacterCard(raw) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("角色卡不是物件");
+        const card = raw.spec === "chara_card_v2" && raw.data && typeof raw.data === "object" ? raw.data : raw.data && raw.name === undefined && typeof raw.data === "object" ? raw.data : raw;
+        const standard = ["description","personality","scenario","mes_example"].some(key => typeof card[key] === "string");
+        if (!standard) {
+          const name = String(card.character_name || card.char_name || card.title || card.name || "").trim();
+          return { name, description: flattenObject(card).join("\n") };
+        }
+        const blocks = [];
+        for (const key of ["description","personality","scenario"]) if (String(card[key] || "").trim()) blocks.push(String(card[key]).trim());
+        const sample = String(card.mes_example || "").trim().slice(0,600);
+        if (sample) blocks.push("【語氣樣本】\n" + sample);
+        return { name: String(card.name || card.character_name || "").trim(), description: blocks.join("\n\n") };
+      }
+      function bytesToText(bytes) { return new TextDecoder("utf-8",{ fatal: false }).decode(bytes); }
+      function base64ToBytes(text) { const binary = atob(String(text).replace(/\s/g,"")); return Uint8Array.from(binary,char => char.charCodeAt(0)); }
+      function parseTavernPngBytes(bytes) {
+        const signature = [137,80,78,71,13,10,26,10];
+        if (bytes.length < 8 || signature.some((value,index) => bytes[index] !== value)) throw new Error("不是 PNG 檔");
+        const view = new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength); let offset = 8;
+        while (offset + 12 <= bytes.length) {
+          const length = view.getUint32(offset); const type = bytesToText(bytes.slice(offset + 4,offset + 8)); const start = offset + 8, end = start + length;
+          if (end + 4 > bytes.length) throw new Error("PNG 區塊不完整");
+          if (type === "tEXt") {
+            const chunk = bytes.slice(start,end), zero = chunk.indexOf(0), key = zero >= 0 ? bytesToText(chunk.slice(0,zero)) : "";
+            if (key === "chara") { const encoded = bytesToText(chunk.slice(zero + 1)); return JSON.parse(bytesToText(base64ToBytes(encoded))); }
+          }
+          offset = end + 4;
+        }
+        throw new Error("PNG 裡找不到 chara 角色卡");
+      }
+      function readFileBytes(file) { return file.arrayBuffer().then(buffer => new Uint8Array(buffer)); }
+      function readFileText(file) { return file.text(); }
+      async function resizeAvatar(file,maxSize = 256) {
+        const source = URL.createObjectURL(file);
+        try {
+          const image = new Image(); await new Promise((resolve,reject) => { image.onload = resolve; image.onerror = reject; image.src = source; });
+          const scale = Math.min(1,maxSize / Math.max(image.naturalWidth,image.naturalHeight));
+          const canvas = document.createElement("canvas"); canvas.width = Math.max(1,Math.round(image.naturalWidth * scale)); canvas.height = Math.max(1,Math.round(image.naturalHeight * scale));
+          canvas.getContext("2d").drawImage(image,0,0,canvas.width,canvas.height); return canvas.toDataURL("image/png");
+        } finally { URL.revokeObjectURL(source); }
+      }
+      function applyParsedCard(parsed,avatarDataUrl = "") {
+        elements.characterNameInput.value = parsed.name || ""; elements.characterDescriptionInput.value = parsed.description || "";
+        settings.characterName = elements.characterNameInput.value; settings.characterDescription = elements.characterDescriptionInput.value;
+        if (avatarDataUrl) settings.avatarDataUrl = avatarDataUrl;
+        persistSettings(); return { name: settings.characterName, description: settings.characterDescription, avatarStored: Boolean(settings.avatarDataUrl) };
+      }
+      async function parseCardFile(file) {
+        const lower = String(file.name || "").toLowerCase(); let parsed, avatar = "";
+        if (lower.endsWith(".png") || file.type === "image/png") { const bytes = await readFileBytes(file); parsed = normalizeCharacterCard(parseTavernPngBytes(bytes)); avatar = await resizeAvatar(file); }
+        else if (lower.endsWith(".json") || file.type === "application/json") parsed = normalizeCharacterCard(JSON.parse(await readFileText(file)));
+        else if (lower.endsWith(".md") || lower.endsWith(".txt") || file.type.startsWith("text/")) parsed = { name: "", description: await readFileText(file) };
+        else throw new Error("不支援的檔案格式");
+        return applyParsedCard(parsed,avatar);
+      }
+      function formToSettings() {
+        return { ...settings, endpoint: elements.endpointInput.value.trim().replace(/\/+$/,""), apiKey: elements.apiKeyInput.value.trim(), model: elements.modelInput.value.trim(), characterName: elements.characterNameInput.value.trim(), characterDescription: elements.characterDescriptionInput.value, playerName: elements.playerNameInput.value.trim() || "你" };
+      }
+      function settingsToForm() {
+        elements.endpointInput.value = settings.endpoint; elements.endpointInput.placeholder = "https:" + "//generativelanguage.googleapis.com/v1beta/openai";
+        elements.apiKeyInput.value = settings.apiKey; elements.modelInput.value = settings.model; elements.characterNameInput.value = settings.characterName; elements.characterDescriptionInput.value = settings.characterDescription; elements.playerNameInput.value = settings.playerName || "你";
+      }
+      function persistSettings() {
+        const wasComplete = settingsComplete();
+        settings = formToSettings();
+        safeSet(SETTINGS_KEY,JSON.stringify(settings));
+        renderIdentity();
+        if (!wasComplete && settingsComplete()) setTimeout(requestOpening,0);
+      }
+      function clearAllData(skipConfirm = false) {
+        if (!skipConfirm && !confirm("清除這張牌桌在本站儲存的金鑰、角色卡、頭像、對話與戰績？")) return false;
+        const keys = []; for (let index = 0; index < localStorage.length; index += 1) { const key = localStorage.key(index); if (key?.startsWith(STORE_PREFIX)) keys.push(key); }
+        keys.forEach(key => localStorage.removeItem(key));
+        if (apiController) apiController.abort(); settings = defaultSettings(); transcript = []; openingSent = false; lastSpokenRound = null; state.records = blankRecords(); settingsToForm(); renderIdentity(); startRound({ mode: state.mode, skipSpeech: true }); elements.cardStatus.textContent = "本站牌桌資料已清除。"; return true;
+      }
+      async function loadModels() {
+        persistSettings(); elements.modelStatus.textContent = "正在撈清單…"; elements.modelList.replaceChildren();
+        if (!settings.endpoint || !settings.apiKey) { elements.modelStatus.textContent = "撈不到，請手填"; return false; }
+        const controller = new AbortController(), timer = setTimeout(() => controller.abort(),API_TIMEOUT_MS);
+        try {
+          const response = await fetch(endpointPath("/models"),{ headers: { Authorization: "Bearer " + settings.apiKey }, signal: controller.signal });
+          if (!response.ok) throw new Error("bad response");
+          const data = await response.json(), rows = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
+          const names = rows.map(row => String(typeof row === "string" ? row : row.id || row.name || "").replace(/^models\//,"")).filter(Boolean);
+          if (!names.length) throw new Error("empty");
+          elements.modelList.replaceChildren(...names.map(name => { const option = document.createElement("option"); option.value = name; return option; }));
+          elements.modelStatus.textContent = "找到 " + names.length + " 個模型。"; return names;
+        } catch (_error) { elements.modelStatus.textContent = "撈不到，請手填"; return false; }
+        finally { clearTimeout(timer); }
+      }
+      function openChatlog() {
+        elements.chatlogBody.replaceChildren(); const entries = transcript.filter(row => row.who === "him" || row.who === "you");
+        if (!entries.length) { const empty = document.createElement("p"); empty.className = "cl-empty"; empty.textContent = "這桌還沒說過話。"; elements.chatlogBody.append(empty); }
+        let previous = null;
+        for (const entry of entries) {
+          if (entry.d && entry.d !== previous) { if (previous !== null || entry.d !== localDay()) { const marker = document.createElement("div"); marker.className = "cl-day"; marker.textContent = "── " + entry.d.slice(5).replace("-","/") + " ──"; elements.chatlogBody.append(marker); } previous = entry.d; }
+          const row = document.createElement("div"); row.className = "cl-row " + entry.who; const bubble = document.createElement("div"); bubble.className = "cl-bubble"; bubble.textContent = entry.text; row.append(bubble); elements.chatlogBody.append(row);
+        }
+        elements.chatlogOverlay.hidden = false; elements.chatlogBody.scrollTop = elements.chatlogBody.scrollHeight;
+      }
+      function runSelfTest() {
+        const deck = createDeck(), codes = deck.map(card => card.code);
+        const results = Object.freeze({
+          a_soft17: scoreHand("blackjack",["♠A","♥6"]), a_hard17: scoreHand("blackjack",["♠A","♥6","♦10"]),
+          b_facesOnePoint: scoreHand("tenhalf",["♣J","♦Q"]).total, b_aceOnePoint: scoreHand("tenhalf",["♠A"]).total,
+          c_blackjackBust: classifyHand("blackjack",["♠K","♥Q","♦2"]).kind, c_tenhalfBust: classifyHand("tenhalf",["♠10","♥A"]).kind,
+          d_blackjack: classifyHand("blackjack",["♠A","♥K"]).kind, d_tenhalf: classifyHand("tenhalf",["♠10","♥J"]).kind, d_fiveDragon: classifyHand("tenhalf",["♠A","♥A","♦2","♣2","♠3"]).kind,
+          e_blackjackDealer: simulateDealer("blackjack",["♠6","♥9"],["♦2","♣K"]), e_tenhalfDealer: simulateDealer("tenhalf",["♠3"],["♥4","♦A","♣K"]),
+          f_deckCount: deck.length, f_uniqueCount: new Set(codes).size
+        });
+        console.info("[牌桌自測] " + JSON.stringify(results)); return results;
+      }
+
+      elements.settingButton.addEventListener("click",() => { elements.settingsOverlay.hidden = false; elements.endpointInput.focus(); });
+      elements.settingsOverlay.addEventListener("click",event => { if (event.target === elements.settingsOverlay || event.target.closest("[data-close-settings]")) elements.settingsOverlay.hidden = true; });
+      elements.chatlogOverlay.addEventListener("click",event => { if (event.target === elements.chatlogOverlay || event.target.closest("[data-close-chatlog]")) elements.chatlogOverlay.hidden = true; });
+      document.querySelectorAll(".avatar").forEach(button => button.addEventListener("click",openChatlog));
+      elements.settingsForm.addEventListener("input",persistSettings);
+      elements.settingsForm.addEventListener("change",persistSettings);
+      elements.toggleKeyButton.addEventListener("click",() => { const showing = elements.apiKeyInput.type === "text"; elements.apiKeyInput.type = showing ? "password" : "text"; elements.toggleKeyButton.textContent = showing ? "顯示" : "隱藏"; });
+      elements.loadModelsButton.addEventListener("click",() => void loadModels());
+      elements.cardFileInput.addEventListener("change",async () => { const file = elements.cardFileInput.files?.[0]; if (!file) return; elements.cardStatus.textContent = "正在讀卡…"; try { const result = await parseCardFile(file); elements.cardStatus.textContent = "已載入" + (result.name ? "「" + result.name + "」" : "文字角色卡") + "。"; requestOpening(); } catch (error) { elements.cardStatus.textContent = "讀卡失敗：" + error.message; } finally { elements.cardFileInput.value = ""; } });
+      elements.clearButton.addEventListener("click",() => clearAllData(false));
+      elements.settingsOverlay.addEventListener("transitionend",persistSettings);
+      document.querySelector("[data-close-settings]").addEventListener("click",() => { persistSettings(); requestOpening(); });
+      elements.hitButton.addEventListener("click",() => hit(false)); elements.standButton.addEventListener("click",() => dealerTurn(false,false)); elements.newGameButton.addEventListener("click",() => startRound());
+      document.querySelectorAll(".mode-button").forEach(button => button.addEventListener("click",() => { if (button.dataset.mode !== state.mode) startRound({ mode: button.dataset.mode }); }));
+      elements.helpButton.addEventListener("click",() => { if (state.phase === "you" && !apiThinking) void askDealer("hint"); });
+      elements.chatForm.addEventListener("submit",async event => {
+        event.preventDefault(); if (apiThinking || chatSending) return;
+        const text = elements.chatInput.value.trim().slice(0,300); if (!text) return;
+        chatSending = true; elements.chatInput.value = ""; transcript.push({ who: "you", text, d: localDay(), shownAt: performance.now(), animated: false, trigger: "chat" }); transcript = transcript.slice(-CHAT_CAP); saveChat(); renderConversation();
+        try { await askDealer("chat",{ text }); } finally { chatSending = false; renderConversation(); elements.chatInput.focus(); }
+      });
+      document.addEventListener("keydown",event => { if (event.key !== "Escape") return; elements.settingsOverlay.hidden = true; elements.chatlogOverlay.hidden = true; });
+
+      settingsToForm(); restoreChat(); renderIdentity(); startRound();
+      window.cardsSelfTest = runSelfTest();
+      window.cardsTest = Object.freeze({
+        setDeck(sequence,mode = state.mode) { return startRound({ deck: sequence, mode, skipSpeech: true }); }, state: snapshot, hit() { return hit(true); }, stand() { return dealerTurn(true,true); },
+        setMode(mode) { if (!RULES[mode]) throw new Error("無效的玩法"); return startRound({ mode, skipSpeech: true }); },
+        scoreHand, classifyHand, compareHands, createDeck: () => createDeck().map(card => card.code), selfTest: runSelfTest,
+        normalizeCharacterCard, parseTavernPngBytes, parseCardFile, applyParsedCard, loadModels, buildMessages,
+        setSettings(next) { settings = { ...settings, ...next }; settingsToForm(); persistSettings(); return { ...settings }; },
+        clearAllData() { return clearAllData(true); }, requestOpening, requests: () => requestLog.map(log => JSON.parse(JSON.stringify(log)))
+      });
+    })();
+  </script>
+</body>
+</html>
