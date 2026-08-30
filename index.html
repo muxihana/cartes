@@ -605,7 +605,11 @@
       }
       async function setAvatarFromFile(file,key) {
         if (!file || !String(file.type || "").startsWith("image/")) throw new Error("請選擇圖片檔");
-        settings[key] = await resizeAvatar(file); safeSet(SETTINGS_KEY,JSON.stringify(settings)); renderIdentity(); return settings[key];
+        // ⚠ 孤兒物件刀（08-31 頭像懸案真兇）：`settings[key]=await…` 會先捕捉舊物件再等待，
+        // 等待期間 change 事件冒泡到表單觸發 persistSettings 把 settings 整顆換新→縮圖寫進孤兒。
+        // 修法＝等完再對「當下的」settings 賦值。
+        const dataUrl = await resizeAvatar(file);
+        settings[key] = dataUrl; safeSet(SETTINGS_KEY,JSON.stringify(settings)); renderIdentity(); return settings[key];
       }
       function formToSettings() {
         return { ...settings, endpoint: elements.endpointInput.value.trim().replace(/\/+$/,""), apiKey: elements.apiKeyInput.value.trim(), model: elements.modelInput.value.trim(), characterName: elements.characterNameInput.value.trim(), characterDescription: elements.characterDescriptionInput.value, playerName: elements.playerNameInput.value.trim() || "你" };
@@ -685,8 +689,10 @@
       elements.settingsOverlay.addEventListener("click",event => { if (event.target === elements.settingsOverlay || event.target.closest("[data-close-settings]")) elements.settingsOverlay.hidden = true; });
       elements.chatlogOverlay.addEventListener("click",event => { if (event.target === elements.chatlogOverlay || event.target.closest("[data-close-chatlog]")) elements.chatlogOverlay.hidden = true; });
       document.querySelectorAll(".avatar").forEach(button => button.addEventListener("click",openChatlog));
-      elements.settingsForm.addEventListener("input",persistSettings);
-      elements.settingsForm.addEventListener("change",persistSettings);
+      // 檔案格的事件不觸發表單存檔（它們有自己的處理器；這也是孤兒物件案的第二道保險）
+      const persistUnlessFile = event => { if (event.target && event.target.type === "file") return; persistSettings(); };
+      elements.settingsForm.addEventListener("input",persistUnlessFile);
+      elements.settingsForm.addEventListener("change",persistUnlessFile);
       document.querySelectorAll("[data-endpoint-preset]").forEach(button => button.addEventListener("click",() => {
         const preset = button.dataset.endpointPreset;
         elements.endpointInput.value = preset === "google" ? "https://generativelanguage.googleapis.com/v1beta/openai" : preset === "openrouter" ? "https://openrouter.ai/api/v1" : "";
