@@ -597,6 +597,12 @@
       }
       function exportCard() { const payload = cardPackage(), name = (payload.name.trim() || "角色").replace(/[\\/:*?"<>|]/g,"_"); return downloadJson(payload,name + "_卡.json"); }
       function exportMemory() { const stamp = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,10).replace(/-/g,""); return downloadJson(memoryPackage(),"牌桌記憶_" + stamp + ".json"); }
+      // 診斷用（08-31 iOS 頭像懸案）：回報存量與預覽器實況，破案後可拆
+      function avatarDebugText(key) {
+        const value = settings[key] || "";
+        const preview = key === "avatarDataUrl" ? elements.dealerAvatarPreview : elements.playerAvatarPreview;
+        return "（" + Math.round(value.length / 1024) + "KB／預覽" + (preview.hidden ? "藏著" : "顯示中") + "／" + (value.slice(5,15) || "空") + "）";
+      }
       async function setAvatarFromFile(file,key) {
         if (!file || !String(file.type || "").startsWith("image/")) throw new Error("請選擇圖片檔");
         settings[key] = await resizeAvatar(file); safeSet(SETTINGS_KEY,JSON.stringify(settings)); renderIdentity(); return settings[key];
@@ -693,8 +699,8 @@
       elements.memoryFileInput.addEventListener("change",() => void handleImportInput(elements.memoryFileInput));
       elements.exportCardButton.addEventListener("click",exportCard);
       elements.exportMemoryButton.addEventListener("click",exportMemory);
-      elements.dealerAvatarInput.addEventListener("change",async () => { const file = elements.dealerAvatarInput.files?.[0]; if (!file) return; elements.avatarStatus.textContent = "正在處理他的頭像…"; try { await setAvatarFromFile(file,"avatarDataUrl"); elements.avatarStatus.textContent = "他的頭像已儲存。"; } catch (error) { elements.avatarStatus.textContent = "頭像失敗：" + (error?.message || "未知原因"); } finally { elements.dealerAvatarInput.value = ""; } });
-      elements.playerAvatarInput.addEventListener("change",async () => { const file = elements.playerAvatarInput.files?.[0]; if (!file) return; elements.avatarStatus.textContent = "正在處理你的頭像…"; try { await setAvatarFromFile(file,"playerAvatarDataUrl"); elements.avatarStatus.textContent = "你的頭像已儲存。"; } catch (error) { elements.avatarStatus.textContent = "頭像失敗：" + (error?.message || "未知原因"); } finally { elements.playerAvatarInput.value = ""; } });
+      elements.dealerAvatarInput.addEventListener("change",async () => { const file = elements.dealerAvatarInput.files?.[0]; if (!file) return; elements.avatarStatus.textContent = "正在處理他的頭像…"; try { await setAvatarFromFile(file,"avatarDataUrl"); elements.avatarStatus.textContent = "他的頭像已儲存" + avatarDebugText("avatarDataUrl"); } catch (error) { elements.avatarStatus.textContent = "頭像失敗：" + (error?.message || "未知原因"); } finally { elements.dealerAvatarInput.value = ""; } });
+      elements.playerAvatarInput.addEventListener("change",async () => { const file = elements.playerAvatarInput.files?.[0]; if (!file) return; elements.avatarStatus.textContent = "正在處理你的頭像…"; try { await setAvatarFromFile(file,"playerAvatarDataUrl"); elements.avatarStatus.textContent = "你的頭像已儲存" + avatarDebugText("playerAvatarDataUrl"); } catch (error) { elements.avatarStatus.textContent = "頭像失敗：" + (error?.message || "未知原因"); } finally { elements.playerAvatarInput.value = ""; } });
       elements.clearButton.addEventListener("click",() => clearAllData(false));
       elements.settingsOverlay.addEventListener("transitionend",persistSettings);
       document.querySelector("[data-close-settings]").addEventListener("click",() => { persistSettings(); requestOpening(); });
