@@ -110,6 +110,11 @@
     .quick-picks .small-button { min-height: 32px; padding-block: 4px; font-size: .75rem; }
     .card-tools, .avatar-upload-grid { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; margin-bottom: 10px; }
     .avatar-upload-grid { grid-template-columns: 1fr 1fr; }
+    .avatar-slot { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .avatar-preview { flex: none; width: 44px; height: 44px; overflow: hidden; border: 2px solid #e6d2c4; border-radius: 50%; background: #bd8d83; display: grid; place-items: center; color: #fff; font-weight: 800; }
+    .avatar-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .avatar-preview img[hidden] { display: none; }
+    .avatar-slot .upload-label { min-width: 0; }
     .small-button, .danger-button, .upload-label { min-height: 40px; padding: 7px 11px; border: 1px solid #b9828a; border-radius: 8px; color: #87525b; background: #fff; cursor: pointer; font-weight: 750; }
     .upload-label { display: grid; place-items: center; text-align: center; }
     .upload-label input { position: absolute; width: 1px; height: 1px; opacity: 0; }
@@ -200,9 +205,10 @@
           <div class="field"><label for="characterNameInput">角色名</label><input id="characterNameInput" name="characterName" autocomplete="off"></div>
           <div class="field"><label for="characterDescriptionInput">角色描述</label><textarea id="characterDescriptionInput" name="characterDescription" placeholder="外觀、性格、說話風格"></textarea></div>
           <div class="field"><label for="playerNameInput">玩家稱呼（他怎麼叫你）</label><input id="playerNameInput" name="playerName" value="你" autocomplete="off"></div>
+          <!-- 抽屜內即時預覽（業主 08-31 檢舉「傳了不會顯示」＝桌角頭像被抽屜蓋住、傳的地方看不到成果） -->
           <div class="avatar-upload-grid">
-            <label class="upload-label">他的頭像<input id="dealerAvatarInput" type="file" accept="image/*"></label>
-            <label class="upload-label">你的頭像<input id="playerAvatarInput" type="file" accept="image/*"></label>
+            <div class="avatar-slot"><span class="avatar-preview"><img id="dealerAvatarPreview" alt="" hidden><span id="dealerPreviewEmpty">莊</span></span><label class="upload-label">他的頭像<input id="dealerAvatarInput" type="file" accept="image/*"></label></div>
+            <div class="avatar-slot"><span class="avatar-preview"><img id="playerAvatarPreview" alt="" hidden><span id="playerPreviewEmpty">你</span></span><label class="upload-label">你的頭像<input id="playerAvatarInput" type="file" accept="image/*"></label></div>
           </div>
           <p id="avatarStatus" class="status" aria-live="polite">頭像會縮至 256 像素後儲存。</p>
         </fieldset>
@@ -378,6 +384,11 @@
         else { elements.dealerAvatar.removeAttribute("src"); elements.dealerAvatar.hidden = true; elements.dealerFallback.hidden = false; }
         if (settings.playerAvatarDataUrl) { elements.playerAvatar.src = settings.playerAvatarDataUrl; elements.playerAvatar.hidden = false; elements.playerFallback.hidden = true; }
         else { elements.playerAvatar.removeAttribute("src"); elements.playerAvatar.hidden = true; elements.playerFallback.hidden = false; }
+        // 設定抽屜內預覽（同一份資料照鏡子）
+        if (settings.avatarDataUrl) { elements.dealerAvatarPreview.src = settings.avatarDataUrl; elements.dealerAvatarPreview.hidden = false; elements.dealerPreviewEmpty.hidden = true; }
+        else { elements.dealerAvatarPreview.removeAttribute("src"); elements.dealerAvatarPreview.hidden = true; elements.dealerPreviewEmpty.hidden = false; }
+        if (settings.playerAvatarDataUrl) { elements.playerAvatarPreview.src = settings.playerAvatarDataUrl; elements.playerAvatarPreview.hidden = false; elements.playerPreviewEmpty.hidden = true; }
+        else { elements.playerAvatarPreview.removeAttribute("src"); elements.playerAvatarPreview.hidden = true; elements.playerPreviewEmpty.hidden = false; }
         elements.setupNote.textContent = settingsComplete() ? name + " 已就座" : "設定完成後莊家會開口";
         elements.setupNote.classList.toggle("ready",settingsComplete());
       }
@@ -529,13 +540,21 @@
       function readFileBytes(file) { return file.arrayBuffer().then(buffer => new Uint8Array(buffer)); }
       function readFileText(file) { return file.text(); }
       async function resizeAvatar(file,maxSize = 256) {
-        const source = URL.createObjectURL(file);
-        try {
-          const image = new Image(); await new Promise((resolve,reject) => { image.onload = resolve; image.onerror = reject; image.src = source; });
-          const scale = Math.min(1,maxSize / Math.max(image.naturalWidth,image.naturalHeight));
-          const canvas = document.createElement("canvas"); canvas.width = Math.max(1,Math.round(image.naturalWidth * scale)); canvas.height = Math.max(1,Math.round(image.naturalHeight * scale));
-          canvas.getContext("2d").drawImage(image,0,0,canvas.width,canvas.height); return canvas.toDataURL("image/png");
-        } finally { URL.revokeObjectURL(source); }
+        // iOS 真機解圖雙保險（業主 08-31 手機檢舉）：先 createImageBitmap、失敗換 FileReader+Image；錯誤講人話
+        let bitmap = null;
+        try { bitmap = await createImageBitmap(file); } catch (_error) { bitmap = null; }
+        if (!bitmap) {
+          const dataUrl = await new Promise((resolve,reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error("讀檔失敗")); reader.readAsDataURL(file); });
+          bitmap = await new Promise((resolve,reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error("圖片解不開（可能是 HEIC 等格式，改用 JPEG/PNG 再試）")); image.src = dataUrl; });
+        }
+        const width = bitmap.naturalWidth || bitmap.width, height = bitmap.naturalHeight || bitmap.height;
+        if (!width || !height) throw new Error("圖片尺寸讀不到");
+        const scale = Math.min(1,maxSize / Math.max(width,height));
+        const canvas = document.createElement("canvas"); canvas.width = Math.max(1,Math.round(width * scale)); canvas.height = Math.max(1,Math.round(height * scale));
+        canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);
+        const out = canvas.toDataURL("image/jpeg",0.85);
+        if (!out || out.length < 100) throw new Error("縮圖輸出失敗");
+        return out;
       }
       function applyParsedCard(parsed,avatarDataUrl = "",avatarProvided = false) {
         elements.characterNameInput.value = parsed.name || ""; elements.characterDescriptionInput.value = parsed.description || "";
@@ -674,8 +693,8 @@
       elements.memoryFileInput.addEventListener("change",() => void handleImportInput(elements.memoryFileInput));
       elements.exportCardButton.addEventListener("click",exportCard);
       elements.exportMemoryButton.addEventListener("click",exportMemory);
-      elements.dealerAvatarInput.addEventListener("change",async () => { const file = elements.dealerAvatarInput.files?.[0]; if (!file) return; elements.avatarStatus.textContent = "正在處理他的頭像…"; try { await setAvatarFromFile(file,"avatarDataUrl"); elements.avatarStatus.textContent = "他的頭像已儲存。"; } catch (error) { elements.avatarStatus.textContent = "頭像失敗：" + error.message; } finally { elements.dealerAvatarInput.value = ""; } });
-      elements.playerAvatarInput.addEventListener("change",async () => { const file = elements.playerAvatarInput.files?.[0]; if (!file) return; elements.avatarStatus.textContent = "正在處理你的頭像…"; try { await setAvatarFromFile(file,"playerAvatarDataUrl"); elements.avatarStatus.textContent = "你的頭像已儲存。"; } catch (error) { elements.avatarStatus.textContent = "頭像失敗：" + error.message; } finally { elements.playerAvatarInput.value = ""; } });
+      elements.dealerAvatarInput.addEventListener("change",async () => { const file = elements.dealerAvatarInput.files?.[0]; if (!file) return; elements.avatarStatus.textContent = "正在處理他的頭像…"; try { await setAvatarFromFile(file,"avatarDataUrl"); elements.avatarStatus.textContent = "他的頭像已儲存。"; } catch (error) { elements.avatarStatus.textContent = "頭像失敗：" + (error?.message || "未知原因"); } finally { elements.dealerAvatarInput.value = ""; } });
+      elements.playerAvatarInput.addEventListener("change",async () => { const file = elements.playerAvatarInput.files?.[0]; if (!file) return; elements.avatarStatus.textContent = "正在處理你的頭像…"; try { await setAvatarFromFile(file,"playerAvatarDataUrl"); elements.avatarStatus.textContent = "你的頭像已儲存。"; } catch (error) { elements.avatarStatus.textContent = "頭像失敗：" + (error?.message || "未知原因"); } finally { elements.playerAvatarInput.value = ""; } });
       elements.clearButton.addEventListener("click",() => clearAllData(false));
       elements.settingsOverlay.addEventListener("transitionend",persistSettings);
       document.querySelector("[data-close-settings]").addEventListener("click",() => { persistSettings(); requestOpening(); });
