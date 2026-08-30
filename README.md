@@ -24,6 +24,8 @@ Google AI Studio 有免費額度可供入門：
 
 也可以使用 OpenRouter：把它提供的 OpenAI 相容端點、金鑰與模型名填進同樣三格即可。請只使用你信任的 API 供應商。
 
+**酒館 Vertex 用戶**（GCP 300 美試用金那派）：你在 SillyTavern「Vertex AI express」填的那把 `AIza` 開頭金鑰，多半可以直接用——按「Google AI Studio」快選鈕、貼同一把金鑰、撈清單選模型即可（實測可通）。若被拒（403），代表你的 GCP 專案沒開 Generative Language API，去 `aistudio.google.com` 免費補領一把就好。
+
 **金鑰只填在自己瀏覽器裡**：別放進任何雲端筆記、公開貼文、截圖、issue 或公開 repo——金鑰外洩等於把你的額度交給陌生人代刷。
 
 ## 隱私聲明
