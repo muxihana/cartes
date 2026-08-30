@@ -20,7 +20,9 @@ Google AI Studio 有免費額度可供入門：
 2. 選擇「Get API key」。
 3. 建立一把 API key，複製到牌桌設定的「金鑰」。
 4. 端點填 Google 的 OpenAI 相容出口：`https://generativelanguage.googleapis.com/v1beta/openai`。
-5. 按「撈清單」選模型，或手動填入可用的模型名。
+5. 按「撈清單」從下拉挑模型，或手動填入可用的模型名。
+
+**建議模型（2026-08-31 時點）**：`gemini-3.1-flash-lite`——快、便宜、實測穩定出話。清單裡有些模型（尤其 preview／thinking／image／tts 系）會沒回應或答非牌桌所問，出不來時先換回這顆再說。
 
 也可以使用 OpenRouter：把它提供的 OpenAI 相容端點、金鑰與模型名填進同樣三格即可。請只使用你信任的 API 供應商。
 
