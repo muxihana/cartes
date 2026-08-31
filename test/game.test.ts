@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyAction, scoreHand, startGame, visibleDealerCards } from "../src/game.js";
+import { applyAction, createDeck, scoreHand, shuffledDeck, startGame, visibleDealerCards } from "../src/game.js";
 
 test("blackjack scores soft and hard aces", () => {
   assert.deepEqual(scoreHand("blackjack", ["♠A", "♥6"]), { total: 17, soft: true, bust: false });
@@ -33,4 +33,14 @@ test("an opening blackjack settles immediately", () => {
   assert.equal(game.phase, "ended");
   assert.equal(game.result?.outcome, "player");
   assert.equal(game.result?.special, "blackjack");
+});
+
+test("cryptographic shuffles preserve one complete, unique 52-card deck", () => {
+  const canonical = createDeck().map((card) => card.code).sort();
+  for (let run = 0; run < 100; run += 1) {
+    const shuffled = shuffledDeck().map((card) => card.code);
+    assert.equal(shuffled.length, 52);
+    assert.equal(new Set(shuffled).size, 52);
+    assert.deepEqual(shuffled.slice().sort(), canonical);
+  }
 });

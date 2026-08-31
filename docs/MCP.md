@@ -33,6 +33,8 @@ npm test
 npm run build
 ```
 
+規則對拍、雙盲紅隊案例與目前尚未涵蓋的遠端風險，請看 [`QA.md`](QA.md)。
+
 以 Codex CLI 為例，把編譯後的 STDIO Server 加進 MCP 設定：
 
 ```powershell
