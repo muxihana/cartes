@@ -1,0 +1,27 @@
+{
+  "name": "cartes-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An MCP server that lets AI agents join a Cartes table and play blackjack or ten-and-a-half.",
+  "type": "module",
+  "bin": {
+    "cartes-mcp": "dist/src/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/index.js",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
+  }
+}
