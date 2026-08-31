@@ -47,4 +47,4 @@ Google AI Studio 有免費額度可供入門：
 
 ## 授權
 
-本專案採用 MIT License。歡迎 fork、改桌布、換規則、加上你自己的角色玩法，再把好點子帶回來。
+本專案採用 [MIT License](LICENSE)（Copyright (c) 2026 Muxi / muxihana）。歡迎 fork、改桌布、換規則、加上你自己的角色玩法，再把好點子帶回來。
