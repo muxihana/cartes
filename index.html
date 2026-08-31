@@ -45,7 +45,7 @@
     .card-suit { font-size: clamp(1.6rem,5vw,2.35rem); line-height: 1; }
     .playing-card.back { overflow: hidden; border: 5px solid #f8eee8; background-color: #4e2438; background-image: repeating-linear-gradient(45deg,transparent 0 6px,rgba(255,255,255,.18) 6px 8px), repeating-linear-gradient(-45deg,transparent 0 6px,rgba(255,255,255,.1) 6px 8px); box-shadow: 0 3px 9px rgba(68,47,38,.25), inset 0 0 0 2px rgba(255,255,255,.4); }
     .table-message { min-height: 35px; padding: 7px 12px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(122,82,75,.18); border-radius: 999px; color: #6b4d4d; background: rgba(255,249,246,.68); font-size: .84rem; font-weight: 750; text-align: center; }
-    .avatar { position: absolute; z-index: 12; cursor: pointer; width: 50px; height: 50px; overflow: hidden; border: 3px solid #fffaf3; border-radius: 50%; background: #8d796b; box-shadow: 0 3px 12px rgba(48,38,31,.3); }
+    .avatar { position: absolute; z-index: 12; cursor: pointer; width: 50px; height: 50px; padding: 0; overflow: hidden; border: 3px solid #fffaf3; border-radius: 50%; background: #8d796b; box-shadow: 0 3px 12px rgba(48,38,31,.3); } /* padding:0 必留——這裡是 button（家裡版是 div），瀏覽器預設 1px 6px 會把 img 壓成 32×42 歪框、cover 裁切跟預覽對不上 */
     .avatar img, .avatar-fallback { display: block; width: 100%; height: 100%; }
     .avatar img { object-fit: cover; } .avatar img[hidden] { display: none; }
     .avatar-fallback { display: grid; place-items: center; color: #fff; background: #bd8d83; font-weight: 800; }
