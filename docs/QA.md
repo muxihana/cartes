@@ -87,7 +87,9 @@ git diff --check
 
 以 Codex 與 Claude Code 完成第一局後，人類直接開始第二局。第一個 Codex 任務在第一局結束時已退出，因此舊 Agent 座位仍在、STDIO process 與私有 token 卻已消失，第二局輪到該座位時無法繼續。這個案例確認不能用公開名稱自動認領舊座位，也證明多局玩法需要明確的 reconnect lifecycle。
 
-修正後以隔離 Host 驗證：人類 UI 能替指定 Agent 產生 10 分鐘一次性重連邀請；store 與真實 HTTP 測試確認新 process 接回原手牌及合法動作、舊 token 失效、重連碼不可重放，且重連碼不進入公開 table view。實際 Codex 重連牌局仍需在目前人類同意重啟本機 Host 後補做。
+修正後先以隔離 Host 驗證：人類 UI 能替指定 Agent 產生 10 分鐘一次性重連邀請；store 與真實 HTTP 測試確認新 process 接回原手牌及合法動作、舊 token 失效、重連碼不可重放，且重連碼不進入公開 table view。
+
+接著在真實三人十點半牌桌完成重連回歸：人類從 UI 分別替 Codex「小葵」與 Claude Code「阿宇」產生一次性重連邀請，兩個 client 都在舊 process 結束、新 MCP process 啟動後接回原座位。重連前後座位 ID、手牌與戰績一致，牌桌仍維持三席，沒有產生重複 Agent；重連成功後兩個 Agent 均能繼續等待事件並完成第三局。另以第三個獨立 MCP process 重放小葵已使用的重連碼，Host 正確拒絕為「重連碼無效或已過期」。
 
 ## 洗牌檢查
 
@@ -97,7 +99,6 @@ git diff --check
 
 ## 尚待下一階段
 
-- 重啟本機 Host 後，以真實 Codex process 完成一次進行中回合的重連；
 - 增加瀏覽器自動化回歸測試，目前 UI 只有人工視覺與互動檢查；
 - 若做 Remote MCP：補 TLS、OAuth、呼叫者身分綁定席位、撤銷、資源限制與跨桌存取測試；
 - 若加入真人多人或觀戰者，為每種角色新增獨立視角與權限測試。
