@@ -17,6 +17,13 @@ export class CartesHostClient {
     });
   }
 
+  rejoinAgent(joinCode: string, agentName: string, reconnectCode: string): Promise<AgentJoinResult> {
+    return this.#request("/api/agent/rejoin", {
+      method: "POST",
+      body: { join_code: joinCode, agent_name: agentName, reconnect_code: reconnectCode },
+    });
+  }
+
   async getAgentView(agentToken: string): Promise<PublicTableView> {
     const result = await this.#request<{ table: PublicTableView }>("/api/agent/table", {
       method: "GET",

@@ -22,7 +22,7 @@ git diff --check
 
 結果：
 
-- 17 個 Node 測試全部通過；
+- 18 個 Node 測試全部通過；
 - TypeScript typecheck 通過；
 - npm audit：0 vulnerabilities；
 - `git diff --check` 通過。
@@ -50,6 +50,7 @@ git diff --check
 - Agent A 說話會喚醒 Agent B；
 - 聊天不改變遊戲版本；
 - 相同 idempotency key 不會重複執行動作。
+- 人類產生的一次性重連碼能在進行中的回合接回同一座位，錯誤名稱、重複使用及舊 token 都會被拒絕。
 
 `test/host-server.test.ts` 透過真實 HTTP listener 驗證 UI 靜態資源、安全標頭、人類建桌、Agent 入座、Bearer 席位憑證與人類動作喚醒 Agent。
 
@@ -79,6 +80,14 @@ git diff --check
 
 桌面版及 390 × 844 手機 viewport 均人工檢查過建桌、邀請碼、座位、牌面、暗牌、聊天、按鈕禁用與結算狀態；沒有發現遮擋或橫向溢出。
 
+另以 Codex「小葵」與 Claude Code「阿宇」同時加入人類牌桌，完成一局十點半：兩個不同 MCP client 都收到人類及彼此的回合事件，依序停牌後由 Host 結算，確認跨 client 的三席實際共桌成立。
+
+## 第二局續接測試
+
+以 Codex 與 Claude Code 完成第一局後，人類直接開始第二局。第一個 Codex 任務在第一局結束時已退出，因此舊 Agent 座位仍在、STDIO process 與私有 token 卻已消失，第二局輪到該座位時無法繼續。這個案例確認不能用公開名稱自動認領舊座位，也證明多局玩法需要明確的 reconnect lifecycle。
+
+修正後以隔離 Host 驗證：人類 UI 能替指定 Agent 產生 10 分鐘一次性重連邀請；store 與真實 HTTP 測試確認新 process 接回原手牌及合法動作、舊 token 失效、重連碼不可重放，且重連碼不進入公開 table view。實際 Codex 重連牌局仍需在目前人類同意重啟本機 Host 後補做。
+
 ## 洗牌檢查
 
 正式牌局使用 `crypto.randomInt` 驅動 Fisher–Yates shuffle。測試連續建立 100 副洗牌結果，逐副確認仍是 52 張、無重複、無缺牌。
@@ -87,7 +96,7 @@ git diff --check
 
 ## 尚待下一階段
 
-- 用 Claude Code 完成一次真實 MCP client／模型端到端牌局；
+- 重啟本機 Host 後，以真實 Codex process 完成一次進行中回合的重連；
 - 增加瀏覽器自動化回歸測試，目前 UI 只有人工視覺與互動檢查；
 - 若做 Remote MCP：補 TLS、OAuth、呼叫者身分綁定席位、撤銷、資源限制與跨桌存取測試；
 - 若加入真人多人或觀戰者，為每種角色新增獨立視角與權限測試。

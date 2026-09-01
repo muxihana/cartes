@@ -45,6 +45,19 @@ test("HTTP host serves the human UI and shares one authority with Agent clients"
   assert.equal(notice.events.some((event) => event.kind === "player_stood" && event.actor_name === "阿童"), true);
   assert.equal(notice.table.legal_actions.includes("hit"), true, "the waiting Agent becomes active");
 
+  const ticket = await request<{ reconnect_code: string }>(host.url, "/api/human/reconnect-code", {
+    method: "POST",
+    token: created.human_token,
+    body: { seat_id: joined.table.viewer_seat_id },
+  });
+  const rejoined = await new CartesHostClient(host.url).rejoinAgent(
+    created.table.join_code,
+    "小葵",
+    ticket.reconnect_code,
+  );
+  assert.equal(rejoined.table.legal_actions.includes("stand"), true);
+  await assert.rejects(() => agent.getAgentView(joined.agent_token), /憑證無效/);
+
   const unauthorized = await fetch(`${host.url}/api/human/table`, { headers: { Authorization: "Bearer wrong" } });
   assert.equal(unauthorized.status, 401);
   assert.equal(JSON.stringify(await unauthorized.json()).includes('"deck"'), false);

@@ -114,6 +114,10 @@ async function routeRequest(
       });
       return;
     }
+    if (method === "POST" && url.pathname === "/api/human/reconnect-code") {
+      sendJson(response, 200, store.createAgentReconnectTicket(token, requireString(body.seat_id, "seat_id")));
+      return;
+    }
   }
 
   if (method === "POST" && url.pathname === "/api/agent/join") {
@@ -122,6 +126,19 @@ async function routeRequest(
       response,
       200,
       store.joinAgent(requireString(body.join_code, "join_code"), requireString(body.agent_name, "agent_name")),
+    );
+    return;
+  }
+  if (method === "POST" && url.pathname === "/api/agent/rejoin") {
+    const body = await readJsonBody(request);
+    sendJson(
+      response,
+      200,
+      store.rejoinAgent(
+        requireString(body.join_code, "join_code"),
+        requireString(body.agent_name, "agent_name"),
+        requireString(body.reconnect_code, "reconnect_code"),
+      ),
     );
     return;
   }

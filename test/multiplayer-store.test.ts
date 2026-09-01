@@ -106,6 +106,34 @@ test("game writes are idempotent and chat does not invalidate an active turn", (
   assert.equal(hit.players[0]!.cards.length, 3);
 });
 
+test("a human-authorized one-time code reconnects an Agent to its active seat", async () => {
+  const store = new MultiplayerTableStore(() => THREE_SEAT_DECK);
+  const created = store.createTable("blackjack", "阿童");
+  const original = store.joinAgent(created.table.join_code, "小葵");
+  const opened = store.startRound(created.human_token, original.table.version, "human-start-reconnect-1");
+  const activeAgent = store.humanAction(created.human_token, "stand", opened.version, "human-stand-reconnect-1");
+  assert.equal(activeAgent.players.find((seat) => seat.name === "小葵")?.status, "active");
+
+  await store.waitForAgentEvents(original.agent_token, 0);
+  const staleWait = store.waitForAgentEvents(original.agent_token, 2_000);
+  const ticket = store.createAgentReconnectTicket(created.human_token, original.table.viewer_seat_id);
+  assert.throws(
+    () => store.rejoinAgent(created.table.join_code, "冒牌小葵", ticket.reconnect_code),
+    /座位不符/,
+  );
+
+  const rejoined = store.rejoinAgent(created.table.join_code, "小葵", ticket.reconnect_code);
+  const displaced = await staleWait;
+  assert.equal(displaced.timed_out, true);
+  assert.deepEqual(rejoined.table.legal_actions, ["hit", "stand"]);
+  assert.throws(() => store.getAgentView(original.agent_token), /憑證無效/);
+  assert.throws(
+    () => store.rejoinAgent(created.table.join_code, "小葵", ticket.reconnect_code),
+    /無效或已過期/,
+  );
+  assert.equal(JSON.stringify(rejoined.table).includes(ticket.reconnect_code), false);
+});
+
 function assertPrivateStateAbsent(value: unknown, forbiddenCards: string[]): void {
   const serialized = JSON.stringify(value);
   assert.equal(serialized.includes('"deck"'), false);

@@ -151,8 +151,29 @@
       const kind = document.createElement("small");
       kind.textContent = seat.kind === "human" ? "人類" : "Agent";
       row.append(dot, label, kind);
+      if (seat.kind === "agent") {
+        const reconnect = document.createElement("button");
+        reconnect.type = "button";
+        reconnect.className = "seat-reconnect";
+        reconnect.textContent = "重連";
+        reconnect.title = `替 ${seat.name} 產生一次性重連邀請`;
+        reconnect.addEventListener("click", () => void createReconnectPrompt(seat));
+        row.append(reconnect);
+      }
       return row;
     }));
+  }
+
+  async function createReconnectPrompt(seat) {
+    await run(async () => {
+      const ticket = await api("/api/human/reconnect-code", {
+        method: "POST",
+        body: { seat_id: seat.seat_id },
+      });
+      const prompt = `請使用 cartes MCP，以「${seat.name}」重新連回牌桌 ${state.table.join_code}，並在 join_table 傳入 reconnect_code「${ticket.reconnect_code}」。重連後依 legal_actions 出牌；不是你的回合時呼叫 wait_for_table_event，並持續參與後續牌局直到阿童結束測試。`;
+      await navigator.clipboard.writeText(prompt);
+      setStatus(`${seat.name} 的一次性重連邀請已複製，10 分鐘內有效。`);
+    });
   }
 
   function renderChat(table) {

@@ -20,6 +20,7 @@ export type PublicAction = GameAction | "start_round";
 export type TableEventKind =
   | "table_created"
   | "seat_joined"
+  | "seat_reconnected"
   | "round_started"
   | "turn_started"
   | "player_hit"
@@ -92,6 +93,13 @@ export interface AgentJoinResult {
   readonly table: PublicTableView;
 }
 
+export interface AgentReconnectTicket {
+  readonly reconnect_code: string;
+  readonly expires_at: string;
+  readonly seat_id: string;
+  readonly agent_name: string;
+}
+
 export interface HumanTableResult {
   readonly human_token: string;
   readonly table: PublicTableView;
@@ -129,6 +137,12 @@ interface Waiter {
   readonly timer: NodeJS.Timeout;
 }
 
+interface ReconnectTicket {
+  readonly code: string;
+  readonly seatId: string;
+  readonly expiresAtMs: number;
+}
+
 interface Table {
   readonly id: string;
   readonly joinCode: string;
@@ -148,6 +162,7 @@ interface Table {
   nextEventId: number;
   readonly receipts: Map<string, Receipt<unknown>>;
   readonly waiters: Map<string, Waiter>;
+  readonly reconnectTickets: Map<string, ReconnectTicket>;
 }
 
 export type MultiplayerDeckFactory = (mode: GameMode, round: number, seatCount: number) => readonly (Card | string)[];
@@ -155,6 +170,7 @@ export type MultiplayerDeckFactory = (mode: GameMode, round: number, seatCount: 
 const MAX_SEATS = 8;
 const EVENT_CAP = 500;
 const CHAT_CAP = 100;
+const RECONNECT_TICKET_TTL_MS = 10 * 60 * 1000;
 
 export class MultiplayerTableStore {
   readonly #tables = new Map<string, Table>();
@@ -199,6 +215,7 @@ export class MultiplayerTableStore {
       nextEventId: 1,
       receipts: new Map(),
       waiters: new Map(),
+      reconnectTickets: new Map(),
     };
     this.#tables.set(id, table);
     this.#joinCodes.set(joinCode, id);
@@ -231,6 +248,64 @@ export class MultiplayerTableStore {
     this.#agentTokens.set(token, table.id);
     table.version += 1;
     this.#appendEvent(table, "seat_joined", seat, `${seat.name} 加入了牌桌。`);
+    session.cursor = table.nextEventId - 1;
+    const result = { agent_token: token, table: this.#view(table, seat.id) };
+    this.#flushWaiters(table);
+    return result;
+  }
+
+  createAgentReconnectTicket(humanToken: string, seatId: string): AgentReconnectTicket {
+    const table = this.#tableForHuman(humanToken);
+    const seat = this.#requireSeat(table, seatId);
+    if (seat.kind !== "agent") throw new Error("只能替 Agent 座位產生重連碼。");
+    for (const [code, ticket] of table.reconnectTickets) {
+      if (ticket.seatId === seat.id || ticket.expiresAtMs <= Date.now()) table.reconnectTickets.delete(code);
+    }
+    let code: string;
+    do {
+      code = randomBytes(9).toString("base64url").toUpperCase();
+    } while (table.reconnectTickets.has(code));
+    const expiresAtMs = Date.now() + RECONNECT_TICKET_TTL_MS;
+    table.reconnectTickets.set(code, { code, seatId: seat.id, expiresAtMs });
+    return {
+      reconnect_code: code,
+      expires_at: new Date(expiresAtMs).toISOString(),
+      seat_id: seat.id,
+      agent_name: seat.name,
+    };
+  }
+
+  rejoinAgent(joinCode: string, agentName: string, reconnectCode: string): AgentJoinResult {
+    const tableId = this.#joinCodes.get(joinCode.trim().toUpperCase());
+    if (!tableId) throw new Error("找不到這組邀請碼。");
+    const table = this.#requireTable(tableId);
+    const code = reconnectCode.trim().toUpperCase();
+    const ticket = table.reconnectTickets.get(code);
+    if (!ticket || ticket.expiresAtMs <= Date.now()) {
+      if (ticket) table.reconnectTickets.delete(code);
+      throw new Error("重連碼無效或已過期，請由人類玩家重新產生。");
+    }
+    const seat = this.#requireSeat(table, ticket.seatId);
+    if (seat.kind !== "agent" || seat.name !== normalizeName(agentName, "AI 玩家")) {
+      throw new Error("重連碼與 Agent 座位不符。");
+    }
+    table.reconnectTickets.delete(code);
+    for (const [token, session] of table.agentSessions) {
+      if (session.seatId !== seat.id) continue;
+      const waiter = table.waiters.get(token);
+      if (waiter) {
+        clearTimeout(waiter.timer);
+        table.waiters.delete(token);
+        waiter.resolve(this.#eventResult(table, session, [], true));
+      }
+      table.agentSessions.delete(token);
+      this.#agentTokens.delete(token);
+    }
+    const token = capabilityToken();
+    const session: AgentSession = { token, seatId: seat.id, cursor: table.nextEventId - 1 };
+    table.agentSessions.set(token, session);
+    this.#agentTokens.set(token, table.id);
+    this.#appendEvent(table, "seat_reconnected", seat, `${seat.name} 重新連回牌桌。`);
     session.cursor = table.nextEventId - 1;
     const result = { agent_token: token, table: this.#view(table, seat.id) };
     this.#flushWaiters(table);

@@ -16,6 +16,7 @@ test("multiple MCP Agents share turns and receive independent notifications with
   const host = await startCartesHost({ port: 0, store });
   const first = await connectMcp(new CartesHostClient(host.url), "agent-a", context);
   const second = await connectMcp(new CartesHostClient(host.url), "agent-b", context);
+  const replacement = await connectMcp(new CartesHostClient(host.url), "agent-a-reconnected", context);
   context.after(() => host.close());
 
   const tools = await first.listTools();
@@ -61,6 +62,23 @@ test("multiple MCP Agents share turns and receive independent notifications with
   assert.equal(eventKinds(firstNotice).includes("player_stood"), true);
   assertPrivateStateAbsent(firstNotice, ["♥8", "♠2"]);
 
+  const reconnectTicket = store.createAgentReconnectTicket(created.human_token, firstTurn.viewer_seat_id);
+  const rejoined = await replacement.callTool({
+    name: "join_table",
+    arguments: {
+      join_code: created.table.join_code,
+      agent_name: "小葵",
+      reconnect_code: reconnectTicket.reconnect_code,
+    },
+  });
+  assert.deepEqual(tableFrom(rejoined).legal_actions, ["hit", "stand"]);
+  assert.equal(JSON.stringify(rejoined).includes(reconnectTicket.reconnect_code), false);
+  assert.equal(
+    (await first.callTool({ name: "get_table_view", arguments: {} })).isError,
+    true,
+    "the displaced MCP process loses its old seat token",
+  );
+
   const earlySecond = await second.callTool({
     name: "take_action",
     arguments: { action: "stand", expected_version: humanStand.version, idempotency_key: "agent-b-early-mcp" },
@@ -68,7 +86,7 @@ test("multiple MCP Agents share turns and receive independent notifications with
   assert.equal(earlySecond.isError, true);
   assertPrivateStateAbsent(earlySecond, ["♥8", "♠2"]);
 
-  const firstStand = await first.callTool({
+  const firstStand = await replacement.callTool({
     name: "take_action",
     arguments: { action: "stand", expected_version: firstTurn.version, idempotency_key: "agent-a-stand-mcp" },
   });
@@ -88,10 +106,10 @@ test("multiple MCP Agents share turns and receive independent notifications with
   assert.equal(ended.phase, "ended");
   assert.deepEqual(ended.dealer.cards, ["♣9", "♥8"]);
 
-  await first.callTool({ name: "wait_for_table_event", arguments: { timeout_seconds: 0 } });
+  await replacement.callTool({ name: "wait_for_table_event", arguments: { timeout_seconds: 0 } });
   await second.callTool({ name: "wait_for_table_event", arguments: { timeout_seconds: 0 } });
   const waitingForChat = second.callTool({ name: "wait_for_table_event", arguments: { timeout_seconds: 2 } });
-  await first.callTool({
+  await replacement.callTool({
     name: "say_at_table",
     arguments: { message: "下一局再來。", idempotency_key: "agent-a-chat-mcp1" },
   });

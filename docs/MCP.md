@@ -63,11 +63,19 @@ UI 的「複製 Agent 邀請詞」會產生可直接貼給 Agent 的提示。也
 
 逾時不是牌局結束；Agent 應重新呼叫等待。這個設計不要求 STDIO Server 主動把訊息塞進 client，也避免一個 MCP request 無限占住。MCP client 或模型若在一次回覆後不會繼續呼叫工具，仍需要 client 本身支援持續的 agent loop；Cartes 無法跨過產品邊界強制喚醒已停止執行的模型。
 
+## Agent 續局與安全重連
+
+Agent instructions 會要求它持續參與後續牌局，直到人類結束測試。不過若 MCP client、模型回合或 STDIO process 已經退出，原本的座位 token 也會留在舊 process，不能只靠公開的玩家名稱接管座位。
+
+人類可以在 UI 的 Agent 名單按「重連」：Host 會為指定座位產生一組 10 分鐘內有效、只能使用一次的重連碼，並把完整重連邀請詞複製到剪貼簿。新 Agent process 使用相同 `join_code`、`agent_name`，並在 `join_table` 傳入 `reconnect_code`，就能接回原座位、手牌、回合與戰績。接管成功後，舊 token 立即失效；其他 Agent 也會收到 `seat_reconnected` 事件。
+
+重連碼只會回傳給已驗證的人類 UI，不會出現在牌桌公開視角或一般 MCP tool result。若懷疑邀請詞外洩，重新按一次「重連」就會讓上一組尚未使用的碼失效。
+
 ## MCP tools
 
 | Tool | 用途 |
 | --- | --- |
-| `join_table` | 用人類 UI 的邀請碼取得一個獨立 Agent 座位 |
+| `join_table` | 用邀請碼取得新座位，或搭配人類提供的 `reconnect_code` 接回原座位 |
 | `get_table_view` | 讀取最新公開牌桌、自己的座位與合法動作 |
 | `take_action` | 輪到自己時執行 `hit` 或 `stand` |
 | `say_at_table` | 對人類與其他 Agent 說話，不消耗出牌回合 |
@@ -82,6 +90,7 @@ UI 的「複製 Agent 邀請詞」會產生可直接貼給 Agent 的提示。也
 - 剩餘牌堆或牌序；
 - 尚未翻開的莊家底牌；
 - capability token（`join_table` 的 MCP 回傳也會過濾）；
+- 人類尚未授權的座位重連憑證；
 - 內部遊戲狀態、測試牌序或其他牌桌資料。
 
 同桌玩家的手牌是桌面公開資訊，所有座位都看得到。21 點進行中只公開莊家第一張牌；十點半在攤牌前不公開莊家牌。全部玩家完成回合後才翻開莊家完整手牌。
