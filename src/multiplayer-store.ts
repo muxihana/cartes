@@ -20,6 +20,7 @@ export type PublicAction = GameAction | "start_round";
 export type TableEventKind =
   | "table_created"
   | "seat_joined"
+  | "seat_left"
   | "seat_reconnected"
   | "round_started"
   | "turn_started"
@@ -100,6 +101,14 @@ export interface AgentReconnectTicket {
   readonly agent_name: string;
 }
 
+export interface AgentLeaveResult {
+  readonly left: true;
+  readonly table_id: string;
+  readonly join_code: string;
+  readonly seat_id: string;
+  readonly agent_name: string;
+}
+
 export interface HumanTableResult {
   readonly human_token: string;
   readonly table: PublicTableView;
@@ -171,12 +180,14 @@ const MAX_SEATS = 8;
 const EVENT_CAP = 500;
 const CHAT_CAP = 100;
 const RECONNECT_TICKET_TTL_MS = 10 * 60 * 1000;
+const LEAVE_RECEIPT_CAP = 1_000;
 
 export class MultiplayerTableStore {
   readonly #tables = new Map<string, Table>();
   readonly #joinCodes = new Map<string, string>();
   readonly #agentTokens = new Map<string, string>();
   readonly #humanTokens = new Map<string, string>();
+  readonly #departedAgentTokens = new Map<string, AgentLeaveResult>();
   readonly #deckFactory: MultiplayerDeckFactory;
 
   constructor(deckFactory: MultiplayerDeckFactory = () => shuffledDeck()) {
@@ -320,6 +331,34 @@ export class MultiplayerTableStore {
   getAgentView(agentToken: string): PublicTableView {
     const { table, session } = this.#tableForAgent(agentToken);
     return this.#view(table, session.seatId);
+  }
+
+  leaveAgent(agentToken: string): AgentLeaveResult {
+    const replay = this.#departedAgentTokens.get(agentToken);
+    if (replay) return structuredClone(replay);
+    const { table, session } = this.#tableForAgent(agentToken);
+    const seat = this.#requireSeat(table, session.seatId);
+    const result = this.#leaveResult(table, seat);
+    this.#removeAgentSeat(table, seat, `${seat.name} 離開了牌桌。`, result);
+    return result;
+  }
+
+  removeAgentSeat(
+    humanToken: string,
+    seatId: string,
+    expectedVersion: number,
+    idempotencyKey: string,
+  ): PublicTableView {
+    const table = this.#tableForHuman(humanToken);
+    const humanSeat = table.seats[0]!;
+    const operation = `remove_agent:${seatId}`;
+    const replay = this.#replay<PublicTableView>(table, humanSeat.id, idempotencyKey, operation);
+    if (replay) return replay;
+    this.#assertVersion(table, expectedVersion);
+    const seat = this.#requireSeat(table, seatId);
+    if (seat.kind !== "agent") throw new Error("只能移除 Agent 座位。");
+    this.#removeAgentSeat(table, seat, `${seat.name} 被人類玩家移出牌桌。`, this.#leaveResult(table, seat));
+    return this.#remember(table, humanSeat.id, idempotencyKey, operation, this.#view(table, humanSeat.id));
   }
 
   startRound(humanToken: string, expectedVersion: number, idempotencyKey: string): PublicTableView {
@@ -466,6 +505,58 @@ export class MultiplayerTableStore {
     const result = this.#remember(table, seat.id, idempotencyKey, operation, this.#view(table, seat.id));
     this.#flushWaiters(table);
     return result;
+  }
+
+  #removeAgentSeat(table: Table, seat: Seat, text: string, leaveResult: AgentLeaveResult): void {
+    if (seat.kind !== "agent") throw new Error("人類玩家不能離開自己的牌桌。");
+    const seatIndex = table.seats.indexOf(seat);
+    if (seatIndex < 0) throw new Error("找不到這個座位。");
+    const wasActive = table.phase === "player_turns" && table.activeSeatId === seat.id;
+
+    for (const [token, session] of table.agentSessions) {
+      if (session.seatId !== seat.id) continue;
+      const waiter = table.waiters.get(token);
+      if (waiter) {
+        clearTimeout(waiter.timer);
+        table.waiters.delete(token);
+        waiter.resolve(this.#eventResult(table, session, [], true));
+      }
+      table.agentSessions.delete(token);
+      this.#agentTokens.delete(token);
+      this.#rememberDepartedToken(token, leaveResult);
+    }
+    for (const [code, ticket] of table.reconnectTickets) {
+      if (ticket.seatId === seat.id) table.reconnectTickets.delete(code);
+    }
+    for (const receiptKey of table.receipts.keys()) {
+      if (receiptKey.startsWith(`${seat.id}:`)) table.receipts.delete(receiptKey);
+    }
+
+    table.seats.splice(seatIndex, 1);
+    if (wasActive) table.activeSeatId = null;
+    this.#appendEvent(table, "seat_left", seat, text);
+    if (wasActive) this.#activateNextSeat(table, seatIndex - 1);
+    table.version += 1;
+    this.#flushWaiters(table);
+  }
+
+  #leaveResult(table: Table, seat: Seat): AgentLeaveResult {
+    return {
+      left: true,
+      table_id: table.id,
+      join_code: table.joinCode,
+      seat_id: seat.id,
+      agent_name: seat.name,
+    };
+  }
+
+  #rememberDepartedToken(token: string, result: AgentLeaveResult): void {
+    this.#departedAgentTokens.set(token, structuredClone(result));
+    while (this.#departedAgentTokens.size > LEAVE_RECEIPT_CAP) {
+      const oldest = this.#departedAgentTokens.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.#departedAgentTokens.delete(oldest);
+    }
   }
 
   #activateNextSeat(table: Table, currentIndex: number): void {

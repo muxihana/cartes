@@ -157,8 +157,16 @@
         reconnect.className = "seat-reconnect";
         reconnect.textContent = "重連";
         reconnect.title = `替 ${seat.name} 產生一次性重連邀請`;
+        reconnect.disabled = state.busy;
         reconnect.addEventListener("click", () => void createReconnectPrompt(seat));
-        row.append(reconnect);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "seat-remove";
+        remove.textContent = "移除";
+        remove.title = `將 ${seat.name} 永久移出牌桌`;
+        remove.disabled = state.busy;
+        remove.addEventListener("click", () => void removeAgentSeat(seat));
+        row.append(reconnect, remove);
       }
       return row;
     }));
@@ -173,6 +181,22 @@
       const prompt = `請使用 cartes MCP，以「${seat.name}」重新連回牌桌 ${state.table.join_code}，並在 join_table 傳入 reconnect_code「${ticket.reconnect_code}」。重連後依 legal_actions 出牌；不是你的回合時呼叫 wait_for_table_event，並持續參與後續牌局直到阿童結束測試。`;
       await navigator.clipboard.writeText(prompt);
       setStatus(`${seat.name} 的一次性重連邀請已複製，10 分鐘內有效。`);
+    });
+  }
+
+  async function removeAgentSeat(seat) {
+    if (!window.confirm(`確定要將 ${seat.name} 永久移出牌桌嗎？進行中的牌局會自動交棒給下一位玩家。`)) return;
+    await run(async () => {
+      const result = await api("/api/human/remove-agent", {
+        method: "POST",
+        body: {
+          seat_id: seat.seat_id,
+          expected_version: state.table.version,
+          idempotency_key: operationKey("human-remove-agent"),
+        },
+      });
+      setTable(result.table);
+      setStatus(`${seat.name} 已離開牌桌。`);
     });
   }
 

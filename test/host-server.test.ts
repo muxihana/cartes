@@ -58,6 +58,29 @@ test("HTTP host serves the human UI and shares one authority with Agent clients"
   assert.equal(rejoined.table.legal_actions.includes("stand"), true);
   await assert.rejects(() => agent.getAgentView(joined.agent_token), /憑證無效/);
 
+  const departure = await new CartesHostClient(host.url).leaveAgent(rejoined.agent_token);
+  assert.equal(departure.left, true);
+  assert.deepEqual(await new CartesHostClient(host.url).leaveAgent(rejoined.agent_token), departure);
+  const afterLeave = await request<{ table: PublicTableView }>(host.url, "/api/human/table", {
+    method: "GET",
+    token: created.human_token,
+  });
+  assert.deepEqual(afterLeave.table.players.map((seat) => seat.name), ["阿童"]);
+  assert.equal(afterLeave.table.phase, "ended", "leaving the active final Agent settles the remaining human hand");
+
+  const removable = await agent.joinAgent(created.table.join_code, "阿宇");
+  const removed = await request<{ table: PublicTableView }>(host.url, "/api/human/remove-agent", {
+    method: "POST",
+    token: created.human_token,
+    body: {
+      seat_id: removable.table.viewer_seat_id,
+      expected_version: removable.table.version,
+      idempotency_key: "human-remove-http-01",
+    },
+  });
+  assert.deepEqual(removed.table.players.map((seat) => seat.name), ["阿童"]);
+  await assert.rejects(() => agent.getAgentView(removable.agent_token), /憑證無效/);
+
   const unauthorized = await fetch(`${host.url}/api/human/table`, { headers: { Authorization: "Bearer wrong" } });
   assert.equal(unauthorized.status, 401);
   assert.equal(JSON.stringify(await unauthorized.json()).includes('"deck"'), false);

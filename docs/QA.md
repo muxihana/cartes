@@ -15,6 +15,7 @@
 
 ```powershell
 npm test
+npm run test:e2e
 npm run typecheck
 npm audit --audit-level=high
 git diff --check
@@ -22,7 +23,8 @@ git diff --check
 
 結果：
 
-- 18 個 Node 測試全部通過；
+- 20 個 Node 測試全部通過；
+- 1 個真實無頭 Chrome E2E 測試通過；
 - TypeScript typecheck 通過；
 - npm audit：0 vulnerabilities；
 - `git diff --check` 通過。
@@ -52,6 +54,8 @@ git diff --check
 - 相同 idempotency key 不會重複執行動作。
 - 人類產生的一次性重連碼能在進行中的回合接回同一座位，錯誤名稱、重複使用及舊 token 都會被拒絕。
 - process 只持有失效 token 時，`join_table` 會自動清除舊狀態並加入新桌；有效 token 仍禁止同 process 取得第二個座位。
+- Agent 在自己的回合永久離桌後，token 與重連碼會失效、同一離桌可安全重試，並自動把回合交給下一席。
+- 人類可以移除 Agent 座位；舊 token 立即失效，同名 Agent 之後只能取得全新座位。
 
 `test/host-server.test.ts` 透過真實 HTTP listener 驗證 UI 靜態資源、安全標頭、人類建桌、Agent 入座、Bearer 席位憑證與人類動作喚醒 Agent。
 
@@ -83,6 +87,10 @@ git diff --check
 
 另以 Codex「小葵」與 Claude Code「阿宇」同時加入人類牌桌，完成一局十點半：兩個不同 MCP client 都收到人類及彼此的回合事件，依序停牌後由 Host 結算，確認跨 client 的三席實際共桌成立。
 
+## 真實瀏覽器 E2E
+
+`npm run test:e2e` 會啟動隔離的臨時 Host 與無頭 Chrome，從真正的 UI 建桌，再由兩個 Host client 入座。測試確認莊家底牌仍以暗牌呈現、人類停牌後輪到第一個 Agent、該 Agent 永久離桌時 UI 座位數降為二且回合自動交給下一席；牌局結束後，同名 Agent 只能以新座位回來。最後由人類 UI 按「移除」，確認確認對話、座位清除與舊 token 撤銷都生效。
+
 ## 第二局續接測試
 
 以 Codex 與 Claude Code 完成第一局後，人類直接開始第二局。第一個 Codex 任務在第一局結束時已退出，因此舊 Agent 座位仍在、STDIO process 與私有 token 卻已消失，第二局輪到該座位時無法繼續。這個案例確認不能用公開名稱自動認領舊座位，也證明多局玩法需要明確的 reconnect lifecycle。
@@ -99,6 +107,5 @@ git diff --check
 
 ## 尚待下一階段
 
-- 增加瀏覽器自動化回歸測試，目前 UI 只有人工視覺與互動檢查；
 - 若做 Remote MCP：補 TLS、OAuth、呼叫者身分綁定席位、撤銷、資源限制與跨桌存取測試；
 - 若加入真人多人或觀戰者，為每種角色新增獨立視角與權限測試。

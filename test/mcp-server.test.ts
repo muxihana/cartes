@@ -22,7 +22,7 @@ test("multiple MCP Agents share turns and receive independent notifications with
   const tools = await first.listTools();
   assert.deepEqual(
     tools.tools.map((tool) => tool.name).sort(),
-    ["get_table_view", "join_table", "say_at_table", "take_action", "wait_for_table_event"],
+    ["get_table_view", "join_table", "leave_table", "say_at_table", "take_action", "wait_for_table_event"],
   );
   assert.equal(JSON.stringify(tools).includes("start_new_round"), false);
   for (const tool of tools.tools) {
@@ -123,6 +123,22 @@ test("multiple MCP Agents share turns and receive independent notifications with
   const chatNotice = await waitingForChat;
   assert.equal(eventKinds(chatNotice).includes("message"), true);
   assert.equal(eventTableFrom(chatNotice).recent_chat.at(-1)?.speaker, "小葵");
+
+  const departure = await replacement.callTool({ name: "leave_table", arguments: {} });
+  assert.equal(departure.isError, undefined);
+  assert.equal(
+    (departure.structuredContent as { departure?: { left?: boolean } }).departure?.left,
+    true,
+  );
+  const repeatedDeparture = await replacement.callTool({ name: "leave_table", arguments: {} });
+  assert.deepEqual(repeatedDeparture.structuredContent, departure.structuredContent);
+  assert.equal((await replacement.callTool({ name: "get_table_view", arguments: {} })).isError, true);
+  const afterLeaving = store.createTable("blackjack", "第三位人類");
+  const joinedAfterLeaving = await replacement.callTool({
+    name: "join_table",
+    arguments: { join_code: afterLeaving.table.join_code, agent_name: "小葵新桌" },
+  });
+  assert.equal(joinedAfterLeaving.isError, undefined, "leave_table releases the process-local seat token");
 });
 
 async function connectMcp(host: CartesHostClient, name: string, context: TestContext): Promise<Client> {

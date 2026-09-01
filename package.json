@@ -13,6 +13,8 @@
     "start": "npm run build && node dist/src/host.js",
     "start:mcp": "node dist/src/index.js",
     "test": "npm run build && node --test dist/test/*.test.js",
+    "test:e2e": "npm run build && node --test e2e/*.test.mjs",
+    "health": "node scripts/health.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "engines": {
@@ -26,6 +28,7 @@
     "@types/jsdom": "^21.1.7",
     "@types/node": "^24.10.0",
     "jsdom": "^26.1.0",
+    "playwright-core": "^1.62.1",
     "typescript": "^5.9.3"
   }
 }

@@ -1,12 +1,61 @@
-# 牌桌
+# Cartes MCP 共桌版
 
-讓你的角色坐到對面當莊家，陪你玩 21 點或十點半；他不只會看牌，也會把桌上的恩怨記到下次。
+這是 [muxihana/cartes](https://github.com/muxihana/cartes) 的 fork：保留原本完全在瀏覽器運作的單檔牌桌，另外加入本機 Cartes Host、人類操作 UI 與 STDIO MCP Server，讓一位人類可以直接和多個 Codex／Claude Code Agent 一起玩 21 點或十點半。
 
-> **MCP 共桌版：** `feat/mcp-server` 分支新增本機共桌主機、人類操作 UI 與 STDIO MCP adapter。人類先在瀏覽器開桌，再邀請一個或多個 Codex／Claude Code Agent 各自入座；發牌、回合順序與事件通知都由共用主機掌控。莊家暗牌與剩餘牌堆不會送給人類或 AI。安裝、玩法與安全界線請看 [`docs/MCP.md`](docs/MCP.md)，驗證證據請看 [`docs/QA.md`](docs/QA.md)。原本的單檔網頁仍維持不變。
+## 這個 fork 多了什麼
 
-這是一張完全在瀏覽器裡運作的單檔牌桌：有完整的 21 點與十點半規則、純 CSS 牌面、分模式戰績、角色台詞、求救與桌邊聊天。它能讀取酒館 PNG／JSON 角色卡，也接受 Markdown、純文字或直接手填。對話最多保留最近 100 句，凌晨四點才換日；對話與戰績可匯出成檔備份、角色卡可單獨匯出分享（不含你的私人設定）。
+- 一位人類加最多七個 Agent 的共桌回合制牌局；
+- `wait_for_table_event` 長輪詢，讓不同 Agent 知道別家已經加入、說話或出牌；
+- Host 獨占洗牌、牌堆與莊家暗牌，瀏覽器和 AI 都拿不到未公開資訊；
+- 一次性人類授權重連碼，可由新 MCP process 安全接回原座位、手牌與戰績；
+- `leave_table` 永久離桌與人類 UI「移除」功能，進行中離桌也會自動交棒，不會卡住牌局；
+- optimistic concurrency、冪等寫入、獨立事件游標與多層暗牌洩漏測試。
 
-## 開玩三步
+## 五分鐘開桌
+
+需求：Node.js 20 以上。
+
+```powershell
+npm install
+npm start
+```
+
+開啟 `http://127.0.0.1:3210` 建立牌桌。另一個終端可以確認 Host：
+
+```powershell
+npm run health
+```
+
+把 MCP adapter 加到 Codex：
+
+```powershell
+codex mcp add cartes -- node D:\絕對路徑\cartes\dist\src\index.js
+```
+
+或加到 Claude Code：
+
+```powershell
+claude mcp add --transport stdio --scope user cartes -- node D:\絕對路徑\cartes\dist\src\index.js
+```
+
+重啟 MCP client 後，在人類 UI 按「複製邀請詞」交給 Agent 即可。不是 Agent 回合時，它應持續呼叫 `wait_for_table_event`；要暫時斷線請走 UI 的安全重連，確定不再保留座位時才呼叫 `leave_table`。
+
+## 驗證
+
+```powershell
+npm test
+npm run test:e2e
+npm run typecheck
+npm audit --audit-level=high
+```
+
+`test:e2e` 使用本機 Chrome；可用 `CARTES_BROWSER_CHANNEL` 改瀏覽器 channel，或用 `CARTES_BROWSER_EXECUTABLE` 指定執行檔。完整架構、安全界線與操作方式請看 [`docs/MCP.md`](docs/MCP.md)，測試證據請看 [`docs/QA.md`](docs/QA.md)。
+
+## 原版單檔牌桌
+
+原本的 `index.html` 不需要 Node.js 或 Host，仍可獨立使用。它有完整的 21 點與十點半規則、純 CSS 牌面、分模式戰績、角色台詞、求救與桌邊聊天；也能讀取酒館 PNG／JSON 角色卡、Markdown、純文字或直接手填。對話與戰績可以匯出備份，角色卡也能單獨分享。
+
+### 原版開玩三步
 
 1. 打開牌桌網頁，按右上角「設定」。
 2. 填入 OpenAI 相容 API 的端點、金鑰與模型名；端點可用快選鈕（Google AI Studio／OpenRouter）一鍵代填，不確定模型名稱時可按「撈清單」。
@@ -32,13 +81,13 @@ Google AI Studio 有免費額度可供入門：
 
 **金鑰只填在自己瀏覽器裡**：別放進任何雲端筆記、公開貼文、截圖、issue 或公開 repo——金鑰外洩等於把你的額度交給陌生人代刷。
 
-## 隱私聲明
+## 原版單檔版的隱私聲明
 
 牌桌是純靜態頁面，沒有站方後端。你的 API 金鑰、角色卡、角色頭像、戰績與最近對話全都存在你自己的瀏覽器 `localStorage`；站方不經手，也沒有可供站方讀取的資料庫。
 
 只有在角色需要開口或你主動撈模型清單時，瀏覽器才會直接向你設定的 API 端點送出請求。共用電腦使用完畢，請到設定按「清除所有資料」。
 
-## 已知限制
+## 原版單檔版的已知限制
 
 - Anthropic 原生 API 從瀏覽器直連需要額外的跨來源與安全設定，通常建議改走 OpenRouter 等 OpenAI 相容服務。
 - 資料存在目前瀏覽器；換瀏覽器、換裝置、使用無痕模式或清除網站資料後，角色記憶不會自動搬家——搬家前用對話視窗的「匯出」帶走記憶，到新家「匯入」還原。

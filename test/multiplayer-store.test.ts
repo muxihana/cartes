@@ -134,6 +134,68 @@ test("a human-authorized one-time code reconnects an Agent to its active seat", 
   assert.equal(JSON.stringify(rejoined.table).includes(ticket.reconnect_code), false);
 });
 
+test("an Agent can permanently leave during its turn without stalling the table", async () => {
+  const store = new MultiplayerTableStore(() => THREE_SEAT_DECK);
+  const created = store.createTable("blackjack", "阿童");
+  const first = store.joinAgent(created.table.join_code, "小葵");
+  const second = store.joinAgent(created.table.join_code, "阿宇");
+  const opened = store.startRound(created.human_token, second.table.version, "human-start-leave-01");
+  const firstTurn = store.humanAction(created.human_token, "stand", opened.version, "human-stand-leave-01");
+  assert.equal(firstTurn.active_seat_id, first.table.viewer_seat_id);
+
+  await store.waitForAgentEvents(second.agent_token, 0);
+  const departure = store.leaveAgent(first.agent_token);
+  assert.equal(departure.left, true);
+  assert.equal(departure.seat_id, first.table.viewer_seat_id);
+  assert.deepEqual(store.leaveAgent(first.agent_token), departure, "a retried leave is idempotent");
+  assert.throws(() => store.getAgentView(first.agent_token), /憑證無效/);
+
+  const secondNotice = await store.waitForAgentEvents(second.agent_token, 0);
+  assert.deepEqual(secondNotice.table.players.map((seat) => seat.name), ["阿童", "阿宇"]);
+  assert.equal(secondNotice.table.active_seat_id, second.table.viewer_seat_id);
+  assert.deepEqual(secondNotice.table.legal_actions, ["hit", "stand"]);
+  assert.equal(secondNotice.events.some((event) => event.kind === "seat_left" && event.actor_name === "小葵"), true);
+
+  const ended = store.agentAction(
+    second.agent_token,
+    "stand",
+    secondNotice.table.version,
+    "agent-b-stand-after-leave",
+  );
+  assert.equal(ended.phase, "ended");
+  const returned = store.joinAgent(created.table.join_code, "小葵");
+  assert.notEqual(returned.table.viewer_seat_id, departure.seat_id, "a later join creates a fresh seat");
+});
+
+test("the human can remove an Agent seat and revoke its reconnect ticket", () => {
+  const store = new MultiplayerTableStore(() => THREE_SEAT_DECK);
+  const created = store.createTable("blackjack", "阿童");
+  const joined = store.joinAgent(created.table.join_code, "小葵");
+  const ticket = store.createAgentReconnectTicket(created.human_token, joined.table.viewer_seat_id);
+  const removed = store.removeAgentSeat(
+    created.human_token,
+    joined.table.viewer_seat_id,
+    joined.table.version,
+    "human-remove-agent-01",
+  );
+  assert.deepEqual(removed.players.map((seat) => seat.name), ["阿童"]);
+  assert.deepEqual(
+    store.removeAgentSeat(
+      created.human_token,
+      joined.table.viewer_seat_id,
+      joined.table.version,
+      "human-remove-agent-01",
+    ),
+    removed,
+  );
+  assert.throws(() => store.getAgentView(joined.agent_token), /憑證無效/);
+  assert.throws(
+    () => store.rejoinAgent(created.table.join_code, "小葵", ticket.reconnect_code),
+    /無效或已過期/,
+  );
+  assert.equal(store.joinAgent(created.table.join_code, "小葵").table.players.length, 2);
+});
+
 function assertPrivateStateAbsent(value: unknown, forbiddenCards: string[]): void {
   const serialized = JSON.stringify(value);
   assert.equal(serialized.includes('"deck"'), false);

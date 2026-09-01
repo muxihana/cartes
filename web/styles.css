@@ -101,11 +101,12 @@ legend { margin-bottom: 8px; font-weight: 700; }
 .panel { border: 1px solid var(--line); border-radius: 21px; padding: 18px; background: rgba(255,250,241,.92); box-shadow: 0 12px 32px rgba(58,35,24,.09); }
 .panel-heading { margin-bottom: 15px; }
 .roster { display: grid; gap: 8px; }
-.roster-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; align-items: center; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.roster-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto auto; align-items: center; gap: 7px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .roster-row:last-child { border-bottom: 0; }
 .roster-row small { color: var(--muted); }
-.seat-reconnect { border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 4px 8px; font-size: .72rem; cursor: pointer; }
+.seat-reconnect, .seat-remove { border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 4px 8px; font-size: .72rem; cursor: pointer; }
 .seat-reconnect:hover { border-color: var(--orange); color: var(--orange-deep); }
+.seat-remove:hover { border-color: #b84d3f; color: #9c3428; }
 .roster-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--orange); }
 .roster-dot.agent { background: var(--green); }
 .chat-log { display: grid; align-content: start; gap: 9px; height: 330px; overflow: auto; padding-right: 4px; }

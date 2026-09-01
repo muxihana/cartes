@@ -1,5 +1,5 @@
 import type { GameAction } from "./game.js";
-import type { AgentEventResult, AgentJoinResult, PublicTableView } from "./multiplayer-store.js";
+import type { AgentEventResult, AgentJoinResult, AgentLeaveResult, PublicTableView } from "./multiplayer-store.js";
 
 export class CartesHostClient {
   readonly #baseUrl: string;
@@ -30,6 +30,13 @@ export class CartesHostClient {
       token: agentToken,
     });
     return result.table;
+  }
+
+  leaveAgent(agentToken: string): Promise<AgentLeaveResult> {
+    return this.#request("/api/agent/leave", {
+      method: "POST",
+      token: agentToken,
+    });
   }
 
   async agentAction(

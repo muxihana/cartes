@@ -31,6 +31,8 @@ npm start
 
 `npm start` 會先編譯再啟動 Host，並持續占用這個終端。Host 預設只監聽 `127.0.0.1:3210`。在瀏覽器開啟 `http://127.0.0.1:3210`，輸入人類玩家名稱與模式後建立共桌。
 
+另一個終端可用 `npm run health` 確認 Host URL 與版本；若 Host 不在預設位置，替命令設定 `CARTES_HOST_URL`。
+
 把編譯後的 STDIO adapter 加到每個 MCP client。Codex CLI 範例：
 
 ```powershell
@@ -73,12 +75,15 @@ Agent instructions 會要求它持續參與後續牌局，直到人類結束測�
 
 如果 Host 重啟、原座位被人類授權的新 process 接管，或舊座位憑證因其他原因失效，原 MCP process 下一次呼叫 `join_table` 時會先向 Host 驗證舊 token。確認失效後會自動清除 process 內的舊座位狀態，再加入新桌；暫時連不上 Host 等一般網路錯誤不會誤清 token。仍持有有效座位時，`join_table` 會繼續拒絕第二個座位。
 
+`leave_table` 代表永久放棄座位，和暫時斷線不同。成功後 Host 會撤銷該座位所有 token 與尚未使用的重連碼，MCP process 可以立即加入其他牌桌；同一個離桌請求重試會回放原結果。若 Agent 在進行中的自己回合離桌，Host 會移除座位、該局不再計算它的勝負，並自動把回合交給下一席；其他 Agent 會收到 `seat_left`。人類也能在 UI 按「移除」清掉不再回來的 Agent，操作前會先確認。
+
 ## MCP tools
 
 | Tool | 用途 |
 | --- | --- |
 | `join_table` | 用邀請碼取得新座位，或搭配人類提供的 `reconnect_code` 接回原座位 |
 | `get_table_view` | 讀取最新公開牌桌、自己的座位與合法動作 |
+| `leave_table` | 永久離桌、撤銷座位 token，並讓同一 process 可以加入其他牌桌 |
 | `take_action` | 輪到自己時執行 `hit` 或 `stand` |
 | `say_at_table` | 對人類與其他 Agent 說話，不消耗出牌回合 |
 | `wait_for_table_event` | 等候其他座位或牌局產生事件 |
@@ -108,3 +113,5 @@ Agent instructions 會要求它持續參與後續牌局，直到人類結束測�
 - Host 刻意只綁 loopback。若未來改成遠端服務，必須重新設計登入、席位授權、撤銷、TLS、資源限制與跨桌隔離，不能直接把目前連接埠公開到網路。
 
 完整測試範圍請看 [`QA.md`](QA.md)。
+
+真實瀏覽器回歸可用 `npm run test:e2e` 執行。預設啟動本機 Chrome；可用 `CARTES_BROWSER_CHANNEL` 選擇其他 Playwright channel，或用 `CARTES_BROWSER_EXECUTABLE` 指定瀏覽器執行檔。

@@ -118,6 +118,17 @@ async function routeRequest(
       sendJson(response, 200, store.createAgentReconnectTicket(token, requireString(body.seat_id, "seat_id")));
       return;
     }
+    if (method === "POST" && url.pathname === "/api/human/remove-agent") {
+      sendJson(response, 200, {
+        table: store.removeAgentSeat(
+          token,
+          requireString(body.seat_id, "seat_id"),
+          requirePositiveInteger(body.expected_version, "expected_version"),
+          requireIdempotencyKey(body.idempotency_key),
+        ),
+      });
+      return;
+    }
   }
 
   if (method === "POST" && url.pathname === "/api/agent/join") {
@@ -146,6 +157,10 @@ async function routeRequest(
     const token = bearerToken(request);
     if (method === "GET" && url.pathname === "/api/agent/table") {
       sendJson(response, 200, { table: store.getAgentView(token) });
+      return;
+    }
+    if (method === "POST" && url.pathname === "/api/agent/leave") {
+      sendJson(response, 200, store.leaveAgent(token));
       return;
     }
     const body = await readJsonBody(request);
