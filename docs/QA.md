@@ -1,0 +1,113 @@
+# MCP 共桌版驗證報告
+
+驗證日期：2026-09-01
+驗證範圍：`feat/mcp-server` 本機 Host、人類 UI、多 Agent STDIO MCP adapter
+
+## 結論
+
+目前自動化驗證為 **PASS**：MCP game core 與原版瀏覽器規則在固定牌序下逐步一致；一位人類與多個獨立 Agent 能依序完成同一局；每個 Agent 的通知游標互相獨立；已測的 UI API 與 MCP 成功、錯誤、版本衝突及冪等重試路徑都沒有回傳未翻開的莊家底牌或剩餘牌堆。
+
+這個結論只適用於 loopback 本機 Host。它不是遠端服務的安全認證。
+
+## 自動化證據
+
+執行：
+
+```powershell
+npm test
+npm run test:e2e
+npm run typecheck
+npm audit --audit-level=high
+git diff --check
+```
+
+結果：
+
+- 20 個 Node 測試全部通過；
+- 2 個真實無頭 Chrome E2E 測試通過；
+- TypeScript typecheck 通過；
+- npm audit：0 vulnerabilities；
+- `git diff --check` 通過。
+
+## 規則對拍
+
+`test/browser-parity.test.ts` 會用 jsdom 執行原版 `index.html` 的 `window.cardsTest`，再把同一副固定牌序與同一串動作送入 MCP game core。每次發牌與每次行動後都比對：
+
+- 玩家手牌、莊家完整手牌與規則允許的可見手牌；
+- 剩餘牌序；
+- 回合狀態、底牌是否翻開；
+- 勝負與特殊牌型。
+
+目前共有 24 組代表局面，涵蓋 21 點與十點半的 Blackjack、soft 17、A 降點、爆牌、平手、十點半、五龍、花牌半點，以及莊家多次補牌。
+
+原版的完整底牌與牌堆只從瀏覽器既有的測試鉤子讀取，僅用於同 process 的測試比對；MCP schema 與 tool result 不提供這個鉤子。
+
+## 共桌、通知與雙盲紅隊測試
+
+`test/multiplayer-store.test.ts` 驗證一位人類與兩個 Agent 的座位順序、各自合法動作、莊家結算與戰績，並覆蓋：
+
+- 同一事件會出現在每個 Agent 各自的未讀佇列；
+- Agent A 讀取事件不會吃掉 Agent B 的通知；
+- 人類動作會喚醒兩個正在等待的 Agent；
+- Agent A 說話會喚醒 Agent B；
+- 聊天不改變遊戲版本；
+- 相同 idempotency key 不會重複執行動作。
+- 人類產生的一次性重連碼能在進行中的回合接回同一座位，錯誤名稱、重複使用及舊 token 都會被拒絕。
+- process 只持有失效 token 時，`join_table` 會自動清除舊狀態並加入新桌；有效 token 仍禁止同 process 取得第二個座位。
+- Agent 在自己的回合永久離桌後，token 與重連碼會失效、同一離桌可安全重試，並自動把回合交給下一席。
+- 人類可以移除 Agent 座位；舊 token 立即失效，同名 Agent 之後只能取得全新座位。
+
+`test/host-server.test.ts` 透過真實 HTTP listener 驗證 UI 靜態資源、安全標頭、人類建桌、Agent 入座、Bearer 席位憑證與人類動作喚醒 Agent。
+
+`test/mcp-server.test.ts` 啟動兩個獨立的 in-memory MCP client/server 連線，共用同一個 HTTP Host。在固定牌序放入可辨識暗牌 canary，檢查完整 tool result（文字與 structured content）：
+
+| 路徑 | 驗證 |
+| --- | --- |
+| `join_table` | 取得獨立座位，但 capability token 不進入 MCP result |
+| `get_table_view` | 重讀不增加可見資訊 |
+| `say_at_table` | Agent A 的話喚醒 Agent B，不洩漏私有狀態 |
+| `take_action` | 非目前玩家被拒；輪替、停牌與結算使用最新版本 |
+| `wait_for_table_event` | 讀到人類／其他 Agent 的動作，並取得自己的最新合法動作 |
+| 暗牌 canary | 莊家底牌、下一張牌與 `deck` 欄位在攤牌前均不可見 |
+
+另由 `test/stdio.test.ts` 啟動兩個真正獨立的編譯後 STDIO server process，確認它們能加入同一張人類牌桌，並透過共用 Host 看到彼此的加入事件；每個 process 仍只持有自己的 Agent 座位憑證。
+
+## 真實 Codex 與 UI 端到端
+
+以本機 `codex exec` 連接實際 MCP 設定，從人類瀏覽器 UI 完成一局 21 點：
+
+1. 人類建立共桌，Codex 以邀請碼入座並在桌邊聊天；
+2. 人類從 UI 開局，Codex 的等待呼叫收到 `round_started` 與人類回合；
+3. 人類要牌時，Codex 收到 `player_hit`，但沒有得到不屬於自己的合法動作；
+4. 人類停牌時，Codex 收到 `player_stood` 與自己的 `turn_started`；
+5. Codex 依 17 點手牌及莊家 10 點明牌自行選擇停牌；
+6. Host 才公開莊家底牌並結算莊家 20 點勝出。
+
+桌面版及 390 × 844 手機 viewport 均人工檢查過建桌、邀請碼、座位、牌面、暗牌、聊天、按鈕禁用與結算狀態；沒有發現遮擋或橫向溢出。
+
+另以 Codex「小葵」與 Claude Code「阿宇」同時加入人類牌桌，完成一局十點半：兩個不同 MCP client 都收到人類及彼此的回合事件，依序停牌後由 Host 結算，確認跨 client 的三席實際共桌成立。
+
+## 真實瀏覽器 E2E
+
+`npm run test:e2e` 會啟動隔離的臨時 Host 與無頭 Chrome，從真正的 UI 建桌，再關閉整個瀏覽器 context 並用同一個持久化設定檔重開，確認人類自動回到相同邀請碼的牌桌。接著由兩個 Host client 入座，確認莊家底牌仍以暗牌呈現、人類停牌後輪到第一個 Agent、該 Agent 永久離桌時 UI 座位數降為二且回合自動交給下一席；牌局結束後，同名 Agent 只能以新座位回來。最後由人類 UI 按「移除」，確認確認對話、座位清除與舊 token 撤銷都生效。
+
+第二條瀏覽器 E2E 會在 UI 已保存人類 token 後重啟同一連接埠的 Host。因記憶體牌桌已不存在，頁面重新整理後必須回到建桌畫面、顯示原桌已不存在，並從 `localStorage` 清除失效 token。
+
+## 第二局續接測試
+
+以 Codex 與 Claude Code 完成第一局後，人類直接開始第二局。第一個 Codex 任務在第一局結束時已退出，因此舊 Agent 座位仍在、STDIO process 與私有 token 卻已消失，第二局輪到該座位時無法繼續。這個案例確認不能用公開名稱自動認領舊座位，也證明多局玩法需要明確的 reconnect lifecycle。
+
+修正後先以隔離 Host 驗證：人類 UI 能替指定 Agent 產生 10 分鐘一次性重連邀請；store 與真實 HTTP 測試確認新 process 接回原手牌及合法動作、舊 token 失效、重連碼不可重放，且重連碼不進入公開 table view。
+
+接著在真實三人十點半牌桌完成重連回歸：人類從 UI 分別替 Codex「小葵」與 Claude Code「阿宇」產生一次性重連邀請，兩個 client 都在舊 process 結束、新 MCP process 啟動後接回原座位。重連前後座位 ID、手牌與戰績一致，牌桌仍維持三席，沒有產生重複 Agent；重連成功後兩個 Agent 均能繼續等待事件並完成第三局。另以第三個獨立 MCP process 重放小葵已使用的重連碼，Host 正確拒絕為「重連碼無效或已過期」。
+
+## 洗牌檢查
+
+正式牌局使用 `crypto.randomInt` 驅動 Fisher–Yates shuffle。測試連續建立 100 副洗牌結果，逐副確認仍是 52 張、無重複、無缺牌。
+
+固定牌序注入只存在 game core、測試用 store 與測試 Host；正式 MCP tools 和人類 API 沒有接受 deck／seed／card 的輸入欄位。這項檢查能證明牌組完整性與介面封鎖，不能單獨當作隨機分布的統計認證。
+
+## 尚待下一階段
+
+- 若做 Remote MCP：補 TLS、OAuth、呼叫者身分綁定席位、撤銷、資源限制與跨桌存取測試；
+- 若加入真人多人或觀戰者，為每種角色新增獨立視角與權限測試。
