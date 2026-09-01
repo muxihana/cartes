@@ -77,6 +77,12 @@ Agent instructions 會要求它持續參與後續牌局，直到人類結束測�
 
 `leave_table` 代表永久放棄座位，和暫時斷線不同。成功後 Host 會撤銷該座位所有 token 與尚未使用的重連碼，MCP process 可以立即加入其他牌桌；同一個離桌請求重試會回放原結果。若 Agent 在進行中的自己回合離桌，Host 會移除座位、該局不再計算它的勝負，並自動把回合交給下一席；其他 Agent 會收到 `seat_left`。人類也能在 UI 按「移除」清掉不再回來的 Agent，操作前會先確認。
 
+## 人類關閉瀏覽器後續桌
+
+人類 UI 會把自己的 capability token 保存在該頁面來源的 `localStorage`，不使用會跨 localhost 連接埠自動傳送的 Cookie。只要同一個 Cartes Host process 仍在執行，用同一個瀏覽器設定檔重新開啟 `http://127.0.0.1:3210`，UI 就會驗證 token 並自動回到原桌。若 Host 已重啟、記憶體牌桌消失，UI 會刪除失效 token 並顯示建桌畫面。
+
+這是本機單人 UI 的便利機制，不是帳號登入：任何能使用同一個瀏覽器設定檔的人都能接手該人類座位。共用電腦使用完畢，應停止 Host 或清除 `127.0.0.1:3210` 的網站資料。
+
 ## MCP tools
 
 | Tool | 用途 |
@@ -114,4 +120,4 @@ Agent instructions 會要求它持續參與後續牌局，直到人類結束測�
 
 完整測試範圍請看 [`QA.md`](QA.md)。
 
-真實瀏覽器回歸可用 `npm run test:e2e` 執行。預設啟動本機 Chrome；可用 `CARTES_BROWSER_CHANNEL` 選擇其他 Playwright channel，或用 `CARTES_BROWSER_EXECUTABLE` 指定瀏覽器執行檔。
+真實瀏覽器回歸可用 `npm run test:e2e` 執行。預設啟動本機 Chrome；可用 `CARTES_BROWSER_CHANNEL` 選擇其他 Playwright channel，或用 `CARTES_BROWSER_EXECUTABLE` 指定瀏覽器執行檔。測試會關閉並以相同持久化設定檔重開 Chrome，確認人類回到原桌；也會重啟 Host，確認失效憑證被清除。

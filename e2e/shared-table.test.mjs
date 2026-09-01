@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { chromium } from "playwright-core";
@@ -12,11 +15,13 @@ const THREE_SEAT_DECK = ["♠5", "♥6", "♦7", "♣9", "♦6", "♣5", "♠4",
 test("the real browser UI stays usable when Agents leave or are removed", async (context) => {
   const store = new MultiplayerTableStore(() => THREE_SEAT_DECK);
   const host = await startCartesHost({ port: 0, store });
-  const browser = await chromium.launch(browserLaunchOptions());
-  const page = await browser.newPage();
+  const profileDir = await mkdtemp(join(tmpdir(), "cartes-e2e-"));
+  let browserContext = await chromium.launchPersistentContext(profileDir, browserLaunchOptions());
+  let page = browserContext.pages()[0] ?? await browserContext.newPage();
   context.after(async () => {
-    await browser.close();
+    await browserContext.close().catch(() => undefined);
     await host.close();
+    await rm(profileDir, { recursive: true, force: true });
   });
 
   await page.goto(host.url);
@@ -24,6 +29,13 @@ test("the real browser UI stays usable when Agents leave or are removed", async 
   await page.getByRole("button", { name: "建立共桌牌局" }).click();
   await page.locator("#tablePanel").waitFor({ state: "visible" });
   const joinCode = (await page.locator("#joinCode").innerText()).trim();
+
+  await browserContext.close();
+  browserContext = await chromium.launchPersistentContext(profileDir, browserLaunchOptions());
+  page = browserContext.pages()[0] ?? await browserContext.newPage();
+  await page.goto(host.url);
+  await page.locator("#tablePanel").waitFor({ state: "visible" });
+  assert.equal((await page.locator("#joinCode").innerText()).trim(), joinCode, "the human resumes after a browser restart");
 
   const firstClient = new CartesHostClient(host.url);
   const secondClient = new CartesHostClient(host.url);
@@ -64,6 +76,31 @@ test("the real browser UI stays usable when Agents leave or are removed", async 
   await waitForSeatCount(page, 2);
   await assert.rejects(() => firstClient.getAgentView(returned.agent_token), /憑證無效/);
   assert.equal(await page.locator(".roster-row").filter({ hasText: "小葵" }).count(), 0);
+});
+
+test("a stale human resume token is cleared after the in-memory Host restarts", async (context) => {
+  let host = await startCartesHost({ port: 0 });
+  const port = host.port;
+  const profileDir = await mkdtemp(join(tmpdir(), "cartes-e2e-stale-"));
+  const browserContext = await chromium.launchPersistentContext(profileDir, browserLaunchOptions());
+  const page = browserContext.pages()[0] ?? await browserContext.newPage();
+  context.after(async () => {
+    await browserContext.close().catch(() => undefined);
+    await host.close().catch(() => undefined);
+    await rm(profileDir, { recursive: true, force: true });
+  });
+
+  await page.goto(host.url);
+  await page.getByRole("button", { name: "建立共桌牌局" }).click();
+  await page.locator("#tablePanel").waitFor({ state: "visible" });
+  assert.equal(await page.evaluate(() => Boolean(localStorage.getItem("cartes_human_token"))), true);
+
+  await host.close();
+  host = await startCartesHost({ port });
+  await page.reload();
+  await page.locator("#setupPanel").waitFor({ state: "visible" });
+  await page.getByText("原本的牌桌已不存在，請重新開桌。", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("cartes_human_token")), null);
 });
 
 function browserLaunchOptions() {

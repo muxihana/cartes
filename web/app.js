@@ -1,7 +1,11 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("cartes_human_token") || "", table: null, polling: null, busy: false };
+  const TOKEN_KEY = "cartes_human_token";
+  const legacyToken = sessionStorage.getItem(TOKEN_KEY) || "";
+  const state = { token: localStorage.getItem(TOKEN_KEY) || legacyToken, table: null, polling: null, busy: false };
+  if (legacyToken && !localStorage.getItem(TOKEN_KEY)) localStorage.setItem(TOKEN_KEY, legacyToken);
+  sessionStorage.removeItem(TOKEN_KEY);
   const elements = Object.fromEntries(
     [
       "connectionBadge", "setupPanel", "createForm", "humanName", "tablePanel", "joinCode", "copyInvite",
@@ -20,7 +24,7 @@
         authenticated: false,
       });
       state.token = result.human_token;
-      sessionStorage.setItem("cartes_human_token", state.token);
+      localStorage.setItem(TOKEN_KEY, state.token);
       setTable(result.table);
       setStatus("牌桌建立完成，把邀請碼交給 Agent 就能入座。");
       startPolling();
@@ -76,7 +80,13 @@
 
   function startPolling() {
     clearInterval(state.polling);
-    state.polling = setInterval(() => void refresh().catch((error) => setStatus(error.message, true)), 800);
+    state.polling = setInterval(() => void refresh().catch((error) => {
+      if (error.status === 401) {
+        clearHumanSession();
+        return;
+      }
+      setStatus(error.message, true);
+    }), 800);
   }
 
   function setTable(table) {
@@ -253,7 +263,11 @@
       ...(options.body ? { body: JSON.stringify(options.body) } : {}),
     });
     const payload = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(payload.error || `HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
     return payload;
   }
 
@@ -280,10 +294,23 @@
     elements.statusLine.classList.toggle("error", error);
   }
 
+  function clearHumanSession() {
+    clearInterval(state.polling);
+    state.polling = null;
+    state.token = "";
+    state.table = null;
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+    elements.setupPanel.hidden = false;
+    elements.tablePanel.hidden = true;
+    elements.connectionBadge.textContent = "尚未開桌";
+    elements.connectionBadge.classList.remove("online");
+    setStatus("原本的牌桌已不存在，請重新開桌。", true);
+  }
+
   if (state.token) {
     refresh().then(startPolling).catch(() => {
-      sessionStorage.removeItem("cartes_human_token");
-      state.token = "";
+      clearHumanSession();
     });
   }
 })();

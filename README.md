@@ -8,6 +8,7 @@
 - `wait_for_table_event` 長輪詢，讓不同 Agent 知道別家已經加入、說話或出牌；
 - Host 獨占洗牌、牌堆與莊家暗牌，瀏覽器和 AI 都拿不到未公開資訊；
 - 一次性人類授權重連碼，可由新 MCP process 安全接回原座位、手牌與戰績；
+- 人類誤關分頁或瀏覽器後，用同一個瀏覽器重新開啟頁面會自動回到原桌；
 - `leave_table` 永久離桌與人類 UI「移除」功能，進行中離桌也會自動交棒，不會卡住牌局；
 - optimistic concurrency、冪等寫入、獨立事件游標與多層暗牌洩漏測試。
 
@@ -40,6 +41,8 @@ claude mcp add --transport stdio --scope user cartes -- node D:\絕對路徑\car
 
 重啟 MCP client 後，在人類 UI 按「複製邀請詞」交給 Agent 即可。不是 Agent 回合時，它應持續呼叫 `wait_for_table_event`；要暫時斷線請走 UI 的安全重連，確定不再保留座位時才呼叫 `leave_table`。
 
+人類座位憑證會保存在 `http://127.0.0.1:3210` 這個瀏覽器來源的 `localStorage`。誤關分頁或整個瀏覽器後，只要 Host 沒有停止，用同一個瀏覽器重開網址就會自動回桌；Host 若已重啟，舊憑證會自動清除並回到建桌畫面。共用電腦上的其他使用者若能開啟同一個瀏覽器設定檔，也會取得該人類座位，使用完畢請關閉 Host 或清除該網站資料。
+
 ## 驗證
 
 ```powershell
@@ -49,7 +52,7 @@ npm run typecheck
 npm audit --audit-level=high
 ```
 
-`test:e2e` 使用本機 Chrome；可用 `CARTES_BROWSER_CHANNEL` 改瀏覽器 channel，或用 `CARTES_BROWSER_EXECUTABLE` 指定執行檔。完整架構、安全界線與操作方式請看 [`docs/MCP.md`](docs/MCP.md)，測試證據請看 [`docs/QA.md`](docs/QA.md)。
+`test:e2e` 使用本機 Chrome，並以持久化測試設定檔驗證關閉、重開瀏覽器後的人類續桌；可用 `CARTES_BROWSER_CHANNEL` 改瀏覽器 channel，或用 `CARTES_BROWSER_EXECUTABLE` 指定執行檔。完整架構、安全界線與操作方式請看 [`docs/MCP.md`](docs/MCP.md)，測試證據請看 [`docs/QA.md`](docs/QA.md)。
 
 ## 原版單檔牌桌
 

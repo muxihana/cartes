@@ -24,7 +24,7 @@ git diff --check
 結果：
 
 - 20 個 Node 測試全部通過；
-- 1 個真實無頭 Chrome E2E 測試通過；
+- 2 個真實無頭 Chrome E2E 測試通過；
 - TypeScript typecheck 通過；
 - npm audit：0 vulnerabilities；
 - `git diff --check` 通過。
@@ -89,7 +89,9 @@ git diff --check
 
 ## 真實瀏覽器 E2E
 
-`npm run test:e2e` 會啟動隔離的臨時 Host 與無頭 Chrome，從真正的 UI 建桌，再由兩個 Host client 入座。測試確認莊家底牌仍以暗牌呈現、人類停牌後輪到第一個 Agent、該 Agent 永久離桌時 UI 座位數降為二且回合自動交給下一席；牌局結束後，同名 Agent 只能以新座位回來。最後由人類 UI 按「移除」，確認確認對話、座位清除與舊 token 撤銷都生效。
+`npm run test:e2e` 會啟動隔離的臨時 Host 與無頭 Chrome，從真正的 UI 建桌，再關閉整個瀏覽器 context 並用同一個持久化設定檔重開，確認人類自動回到相同邀請碼的牌桌。接著由兩個 Host client 入座，確認莊家底牌仍以暗牌呈現、人類停牌後輪到第一個 Agent、該 Agent 永久離桌時 UI 座位數降為二且回合自動交給下一席；牌局結束後，同名 Agent 只能以新座位回來。最後由人類 UI 按「移除」，確認確認對話、座位清除與舊 token 撤銷都生效。
+
+第二條瀏覽器 E2E 會在 UI 已保存人類 token 後重啟同一連接埠的 Host。因記憶體牌桌已不存在，頁面重新整理後必須回到建桌畫面、顯示原桌已不存在，並從 `localStorage` 清除失效 token。
 
 ## 第二局續接測試
 
