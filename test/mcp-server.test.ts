@@ -1,21 +1,108 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
+import { CartesHostClient } from "../src/host-client.js";
+import { startCartesHost } from "../src/host-server.js";
 import { createCartesMcpServer } from "../src/mcp-server.js";
-import { TableStore, type TableView } from "../src/table-store.js";
+import { MultiplayerTableStore, type PublicTableView } from "../src/multiplayer-store.js";
 
-test("every MCP tool, error, and retry path preserves double-blind state", async (context) => {
-  const decks = [
-    ["♠5", "♥9", "♦6", "♣8", "♠2", "♥3", "♦4"],
-    ["♠4", "♥7", "♦5", "♣6", "♠A", "♥2", "♦3"],
-  ];
-  const store = new TableStore((_mode, round) => decks[round - 1]!);
-  const server = createCartesMcpServer(store);
-  const client = new Client({ name: "cartes-red-team", version: "1.0.0" });
+const THREE_SEAT_DECK = ["♠5", "♥6", "♦7", "♣9", "♦6", "♣5", "♠4", "♥8", "♠2", "♥3"];
+
+test("multiple MCP Agents share turns and receive independent notifications without private state", async (context) => {
+  const store = new MultiplayerTableStore(() => THREE_SEAT_DECK);
+  const host = await startCartesHost({ port: 0, store });
+  const first = await connectMcp(new CartesHostClient(host.url), "agent-a", context);
+  const second = await connectMcp(new CartesHostClient(host.url), "agent-b", context);
+  context.after(() => host.close());
+
+  const tools = await first.listTools();
+  assert.deepEqual(
+    tools.tools.map((tool) => tool.name).sort(),
+    ["get_table_view", "join_table", "say_at_table", "take_action", "wait_for_table_event"],
+  );
+  assert.equal(JSON.stringify(tools).includes("start_new_round"), false);
+  for (const tool of tools.tools) {
+    assert.equal(JSON.stringify(tool.inputSchema).includes('"deck"'), false);
+    assert.equal(JSON.stringify(tool.inputSchema).includes('"seed"'), false);
+  }
+
+  const beforeJoin = await first.callTool({ name: "get_table_view", arguments: {} });
+  assert.equal(beforeJoin.isError, true);
+
+  const created = store.createTable("blackjack", "阿童");
+  const firstJoin = await first.callTool({
+    name: "join_table",
+    arguments: { join_code: created.table.join_code, agent_name: "小葵" },
+  });
+  const secondJoin = await second.callTool({
+    name: "join_table",
+    arguments: { join_code: created.table.join_code, agent_name: "阿宇" },
+  });
+  assert.equal(firstJoin.isError, undefined);
+  assert.equal(secondJoin.isError, undefined);
+  assert.equal(JSON.stringify(firstJoin).includes("agent_token"), false, "capability tokens stay inside each MCP process");
+
+  const joinedView = tableFrom(secondJoin);
+  const opened = store.startRound(created.human_token, joinedView.version, "human-start-mcp-01");
+  assertPrivateStateAbsent(opened, ["♥8", "♠2"]);
+
+  await first.callTool({ name: "wait_for_table_event", arguments: { timeout_seconds: 0 } });
+  await second.callTool({ name: "wait_for_table_event", arguments: { timeout_seconds: 0 } });
+  const humanStand = store.humanAction(created.human_token, "stand", opened.version, "human-stand-mcp-1");
+
+  const firstNotice = await first.callTool({ name: "wait_for_table_event", arguments: { timeout_seconds: 0 } });
+  assert.equal(firstNotice.isError, undefined);
+  const firstTurn = eventTableFrom(firstNotice);
+  assert.equal(firstTurn.active_seat_id, firstTurn.viewer_seat_id);
+  assert.deepEqual(firstTurn.legal_actions, ["hit", "stand"]);
+  assert.equal(eventKinds(firstNotice).includes("player_stood"), true);
+  assertPrivateStateAbsent(firstNotice, ["♥8", "♠2"]);
+
+  const earlySecond = await second.callTool({
+    name: "take_action",
+    arguments: { action: "stand", expected_version: humanStand.version, idempotency_key: "agent-b-early-mcp" },
+  });
+  assert.equal(earlySecond.isError, true);
+  assertPrivateStateAbsent(earlySecond, ["♥8", "♠2"]);
+
+  const firstStand = await first.callTool({
+    name: "take_action",
+    arguments: { action: "stand", expected_version: firstTurn.version, idempotency_key: "agent-a-stand-mcp" },
+  });
+  assert.equal(firstStand.isError, undefined);
+
+  const secondNotice = await second.callTool({ name: "wait_for_table_event", arguments: { timeout_seconds: 0 } });
+  const secondTurn = eventTableFrom(secondNotice);
+  assert.equal(secondTurn.active_seat_id, secondTurn.viewer_seat_id);
+  assert.equal(eventKinds(secondNotice).includes("player_stood"), true);
+  assert.equal(eventKinds(secondNotice).includes("turn_started"), true);
+
+  const secondStand = await second.callTool({
+    name: "take_action",
+    arguments: { action: "stand", expected_version: secondTurn.version, idempotency_key: "agent-b-stand-mcp" },
+  });
+  const ended = tableFrom(secondStand);
+  assert.equal(ended.phase, "ended");
+  assert.deepEqual(ended.dealer.cards, ["♣9", "♥8"]);
+
+  await first.callTool({ name: "wait_for_table_event", arguments: { timeout_seconds: 0 } });
+  await second.callTool({ name: "wait_for_table_event", arguments: { timeout_seconds: 0 } });
+  const waitingForChat = second.callTool({ name: "wait_for_table_event", arguments: { timeout_seconds: 2 } });
+  await first.callTool({
+    name: "say_at_table",
+    arguments: { message: "下一局再來。", idempotency_key: "agent-a-chat-mcp1" },
+  });
+  const chatNotice = await waitingForChat;
+  assert.equal(eventKinds(chatNotice).includes("message"), true);
+  assert.equal(eventTableFrom(chatNotice).recent_chat.at(-1)?.speaker, "小葵");
+});
+
+async function connectMcp(host: CartesHostClient, name: string, context: TestContext): Promise<Client> {
+  const server = createCartesMcpServer(host);
+  const client = new Client({ name, version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   context.after(async () => {
     await client.close();
@@ -23,190 +110,29 @@ test("every MCP tool, error, and retry path preserves double-blind state", async
   });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
-
-  const tools = await client.listTools();
-  assert.deepEqual(
-    tools.tools.map((tool) => tool.name).sort(),
-    ["get_table_view", "join_table", "say_at_table", "start_new_round", "take_action"],
-  );
-  assert.equal(JSON.stringify(tools).includes("list_tables"), false);
-  for (const tool of tools.tools) {
-    assert.equal(JSON.stringify(tool.inputSchema).includes('"deck"'), false, `${tool.name} must not accept a deck`);
-    assert.equal(JSON.stringify(tool.inputSchema).includes('"seed"'), false, `${tool.name} must not accept a shuffle seed`);
-  }
-
-  const joined = await client.callTool({
-    name: "join_table",
-    arguments: { mode: "blackjack", player_name: "測試 AI" },
-  });
-  assert.equal(joined.isError, undefined);
-  assertPrivateStateAbsent(joined, ["♣8", "♠2", "♥3"]);
-  const opening = tableFrom(joined);
-
-  const read = await client.callTool({ name: "get_table_view", arguments: { table_id: opening.table_id } });
-  assert.equal(read.isError, undefined);
-  assertPrivateStateAbsent(read, ["♣8", "♠2", "♥3"]);
-  assert.deepEqual(tableFrom(read), opening);
-
-  const said = await client.callTool({
-    name: "say_at_table",
-    arguments: {
-      table_id: opening.table_id,
-      message: "我先看牌。",
-      expected_version: opening.version,
-      idempotency_key: "chat-red-team-0001",
-    },
-  });
-  assert.equal(said.isError, undefined);
-  assertPrivateStateAbsent(said, ["♣8", "♠2", "♥3"]);
-  const afterChat = tableFrom(said);
-  assert.equal(afterChat.recent_chat.length, 1);
-
-  const chatReplay = await client.callTool({
-    name: "say_at_table",
-    arguments: {
-      table_id: opening.table_id,
-      message: "我先看牌。",
-      expected_version: opening.version,
-      idempotency_key: "chat-red-team-0001",
-    },
-  });
-  assert.equal(chatReplay.isError, undefined);
-  assertPrivateStateAbsent(chatReplay, ["♣8", "♠2", "♥3"]);
-  assert.deepEqual(tableFrom(chatReplay), afterChat, "chat retry must not append twice");
-
-  const keyReuse = await client.callTool({
-    name: "take_action",
-    arguments: {
-      table_id: opening.table_id,
-      action: "hit",
-      expected_version: afterChat.version,
-      idempotency_key: "chat-red-team-0001",
-    },
-  });
-  assert.equal(keyReuse.isError, true);
-  assertPrivateStateAbsent(keyReuse, ["♣8", "♠2", "♥3"]);
-
-  const staleWrite = await client.callTool({
-    name: "take_action",
-    arguments: {
-      table_id: opening.table_id,
-      action: "hit",
-      expected_version: opening.version,
-      idempotency_key: "stale-red-team-001",
-    },
-  });
-  assert.equal(staleWrite.isError, true);
-  assertPrivateStateAbsent(staleWrite, ["♣8", "♠2", "♥3"]);
-
-  const hit = await client.callTool({
-    name: "take_action",
-    arguments: {
-      table_id: opening.table_id,
-      action: "hit",
-      expected_version: afterChat.version,
-      idempotency_key: "action-red-team-01",
-    },
-  });
-  assert.equal(hit.isError, undefined);
-  assertPrivateStateAbsent(hit, ["♣8", "♥3"]);
-  const afterHit = tableFrom(hit);
-  assert.deepEqual(afterHit.player_cards, ["♠5", "♦6", "♠2"]);
-
-  const hitReplay = await client.callTool({
-    name: "take_action",
-    arguments: {
-      table_id: opening.table_id,
-      action: "hit",
-      expected_version: afterChat.version,
-      idempotency_key: "action-red-team-01",
-    },
-  });
-  assert.equal(hitReplay.isError, undefined);
-  assertPrivateStateAbsent(hitReplay, ["♣8", "♥3"]);
-  assert.deepEqual(tableFrom(hitReplay), afterHit, "action retry must not draw twice");
-
-  const stand = await client.callTool({
-    name: "take_action",
-    arguments: {
-      table_id: opening.table_id,
-      action: "stand",
-      expected_version: afterHit.version,
-      idempotency_key: "action-red-team-02",
-    },
-  });
-  assert.equal(stand.isError, undefined);
-  assertPrivateStateAbsent(stand, ["♥3", "♦4"]);
-  const ended = tableFrom(stand);
-  assert.equal(ended.phase, "ended");
-  assert.deepEqual(ended.dealer_cards, ["♥9", "♣8"], "hole card becomes public only after settlement");
-
-  const nextRound = await client.callTool({
-    name: "start_new_round",
-    arguments: {
-      table_id: opening.table_id,
-      expected_version: ended.version,
-      idempotency_key: "round-red-team-001",
-    },
-  });
-  assert.equal(nextRound.isError, undefined);
-  assertPrivateStateAbsent(nextRound, ["♣6", "♠A", "♥2"]);
-  const roundTwo = tableFrom(nextRound);
-  assert.equal(roundTwo.round, 2);
-
-  const roundReplay = await client.callTool({
-    name: "start_new_round",
-    arguments: {
-      table_id: opening.table_id,
-      expected_version: ended.version,
-      idempotency_key: "round-red-team-001",
-    },
-  });
-  assert.equal(roundReplay.isError, undefined);
-  assertPrivateStateAbsent(roundReplay, ["♣6", "♠A", "♥2"]);
-  assert.deepEqual(tableFrom(roundReplay), roundTwo, "new-round retry must not deal twice");
-
-  const prematureRound = await client.callTool({
-    name: "start_new_round",
-    arguments: {
-      table_id: opening.table_id,
-      expected_version: roundTwo.version,
-      idempotency_key: "round-red-team-002",
-    },
-  });
-  assert.equal(prematureRound.isError, true);
-  assertPrivateStateAbsent(prematureRound, ["♣6", "♠A", "♥2"]);
-
-  const blankChat = await client.callTool({
-    name: "say_at_table",
-    arguments: {
-      table_id: opening.table_id,
-      message: "   ",
-      expected_version: roundTwo.version,
-      idempotency_key: "chat-red-team-0002",
-    },
-  });
-  assert.equal(blankChat.isError, true);
-  assertPrivateStateAbsent(blankChat, ["♣6", "♠A", "♥2"]);
-
-  const missingTable = await client.callTool({
-    name: "get_table_view",
-    arguments: { table_id: randomUUID() },
-  });
-  assert.equal(missingTable.isError, true);
-  assertPrivateStateAbsent(missingTable, ["♣6", "♠A", "♥2"]);
-});
-
-function tableFrom(result: unknown): TableView {
-  const structured = (result as { structuredContent?: { table?: unknown } }).structuredContent;
-  assert.ok(structured?.table, "successful tool result must have a structured table view");
-  return structured.table as TableView;
+  return client;
 }
 
-function assertPrivateStateAbsent(result: unknown, forbiddenCards: string[]): void {
-  const serialized = JSON.stringify(result);
-  assert.equal(serialized.includes('"deck"'), false, "tool result must not expose a deck field");
-  for (const card of forbiddenCards) {
-    assert.equal(serialized.includes(card), false, `tool result leaked private card ${card}`);
-  }
+function tableFrom(result: unknown): PublicTableView {
+  const table = (result as { structuredContent?: { table?: PublicTableView } }).structuredContent?.table;
+  assert.ok(table);
+  return table;
+}
+
+function eventTableFrom(result: unknown): PublicTableView {
+  const table = (result as { structuredContent?: { table?: PublicTableView } }).structuredContent?.table;
+  assert.ok(table);
+  return table;
+}
+
+function eventKinds(result: unknown): string[] {
+  return ((result as { structuredContent?: { events?: Array<{ kind: string }> } }).structuredContent?.events ?? []).map(
+    (event) => event.kind,
+  );
+}
+
+function assertPrivateStateAbsent(value: unknown, forbiddenCards: string[]): void {
+  const serialized = JSON.stringify(value);
+  assert.equal(serialized.includes('"deck"'), false);
+  for (const card of forbiddenCards) assert.equal(serialized.includes(card), false, `leaked private card ${card}`);
 }

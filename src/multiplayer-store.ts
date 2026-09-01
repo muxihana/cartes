@@ -1,0 +1,583 @@
+import { randomBytes, randomUUID } from "node:crypto";
+
+import {
+  classifyHand,
+  compareHands,
+  parseCard,
+  type Card,
+  type GameAction,
+  type GameMode,
+  type GameResult,
+  RULES,
+  scoreHand,
+  shuffledDeck,
+} from "./game.js";
+
+export type TablePhase = "lobby" | "player_turns" | "ended";
+export type SeatKind = "human" | "agent";
+export type SeatStatus = "waiting" | "active" | "stood" | "bust";
+export type PublicAction = GameAction | "start_round";
+export type TableEventKind =
+  | "table_created"
+  | "seat_joined"
+  | "round_started"
+  | "turn_started"
+  | "player_hit"
+  | "player_stood"
+  | "player_bust"
+  | "round_ended"
+  | "message";
+
+export interface SeatResult {
+  readonly outcome: GameResult["outcome"];
+  readonly special: GameResult["special"];
+  readonly player_points: number;
+  readonly dealer_points: number;
+}
+
+export interface PublicSeatView {
+  readonly seat_id: string;
+  readonly name: string;
+  readonly kind: SeatKind;
+  readonly cards: string[];
+  readonly points: number;
+  readonly status: SeatStatus;
+  readonly is_you: boolean;
+  readonly result: SeatResult | null;
+  readonly records: { player: number; dealer: number; push: number };
+}
+
+export interface PublicChatMessage {
+  readonly event_id: number;
+  readonly seat_id: string;
+  readonly speaker: string;
+  readonly speaker_kind: SeatKind;
+  readonly text: string;
+  readonly at: string;
+}
+
+export interface TableEvent {
+  readonly event_id: number;
+  readonly kind: TableEventKind;
+  readonly round: number;
+  readonly actor_seat_id: string | null;
+  readonly actor_name: string | null;
+  readonly text: string;
+  readonly at: string;
+}
+
+export interface PublicTableView {
+  readonly table_id: string;
+  readonly join_code: string;
+  readonly mode: GameMode;
+  readonly rule_label: string;
+  readonly phase: TablePhase;
+  readonly version: number;
+  readonly round: number;
+  readonly viewer_seat_id: string;
+  readonly active_seat_id: string | null;
+  readonly players: PublicSeatView[];
+  readonly dealer: {
+    readonly cards: string[];
+    readonly points: number | null;
+    readonly hole_revealed: boolean;
+  };
+  readonly legal_actions: PublicAction[];
+  readonly recent_chat: PublicChatMessage[];
+  readonly last_event_id: number;
+}
+
+export interface AgentJoinResult {
+  readonly agent_token: string;
+  readonly table: PublicTableView;
+}
+
+export interface HumanTableResult {
+  readonly human_token: string;
+  readonly table: PublicTableView;
+}
+
+export interface AgentEventResult {
+  readonly timed_out: boolean;
+  readonly events: TableEvent[];
+  readonly table: PublicTableView;
+}
+
+interface Seat {
+  readonly id: string;
+  readonly kind: SeatKind;
+  readonly name: string;
+  readonly cards: Card[];
+  status: SeatStatus;
+  result: SeatResult | null;
+  readonly records: { player: number; dealer: number; push: number };
+}
+
+interface Receipt<T> {
+  readonly operation: string;
+  readonly value: T;
+}
+
+interface AgentSession {
+  readonly token: string;
+  readonly seatId: string;
+  cursor: number;
+}
+
+interface Waiter {
+  readonly resolve: (result: AgentEventResult) => void;
+  readonly timer: NodeJS.Timeout;
+}
+
+interface Table {
+  readonly id: string;
+  readonly joinCode: string;
+  readonly humanToken: string;
+  readonly mode: GameMode;
+  phase: TablePhase;
+  version: number;
+  round: number;
+  deck: Card[];
+  dealerCards: Card[];
+  holeRevealed: boolean;
+  activeSeatId: string | null;
+  readonly seats: Seat[];
+  readonly agentSessions: Map<string, AgentSession>;
+  readonly events: TableEvent[];
+  readonly chat: PublicChatMessage[];
+  nextEventId: number;
+  readonly receipts: Map<string, Receipt<unknown>>;
+  readonly waiters: Map<string, Waiter>;
+}
+
+export type MultiplayerDeckFactory = (mode: GameMode, round: number, seatCount: number) => readonly (Card | string)[];
+
+const MAX_SEATS = 8;
+const EVENT_CAP = 500;
+const CHAT_CAP = 100;
+
+export class MultiplayerTableStore {
+  readonly #tables = new Map<string, Table>();
+  readonly #joinCodes = new Map<string, string>();
+  readonly #agentTokens = new Map<string, string>();
+  readonly #humanTokens = new Map<string, string>();
+  readonly #deckFactory: MultiplayerDeckFactory;
+
+  constructor(deckFactory: MultiplayerDeckFactory = () => shuffledDeck()) {
+    this.#deckFactory = deckFactory;
+  }
+
+  createTable(mode: GameMode, humanName: string): HumanTableResult {
+    const id = randomUUID();
+    const humanToken = capabilityToken();
+    const joinCode = this.#newJoinCode();
+    const humanSeat: Seat = {
+      id: randomUUID(),
+      kind: "human",
+      name: normalizeName(humanName, "玩家"),
+      cards: [],
+      status: "waiting",
+      result: null,
+      records: { player: 0, dealer: 0, push: 0 },
+    };
+    const table: Table = {
+      id,
+      joinCode,
+      humanToken,
+      mode,
+      phase: "lobby",
+      version: 1,
+      round: 0,
+      deck: [],
+      dealerCards: [],
+      holeRevealed: false,
+      activeSeatId: null,
+      seats: [humanSeat],
+      agentSessions: new Map(),
+      events: [],
+      chat: [],
+      nextEventId: 1,
+      receipts: new Map(),
+      waiters: new Map(),
+    };
+    this.#tables.set(id, table);
+    this.#joinCodes.set(joinCode, id);
+    this.#humanTokens.set(humanToken, id);
+    this.#appendEvent(table, "table_created", humanSeat, `${humanSeat.name} 建立了牌桌。`);
+    return { human_token: humanToken, table: this.#view(table, humanSeat.id) };
+  }
+
+  joinAgent(joinCode: string, agentName: string): AgentJoinResult {
+    const tableId = this.#joinCodes.get(joinCode.trim().toUpperCase());
+    if (!tableId) throw new Error("找不到這組邀請碼。");
+    const table = this.#requireTable(tableId);
+    if (table.phase === "player_turns") throw new Error("本局已經開始，請等牌局結束後再加入。");
+    if (table.seats.length >= MAX_SEATS) throw new Error(`這張牌桌最多 ${MAX_SEATS} 個座位。`);
+    const name = normalizeName(agentName, "AI 玩家");
+    if (table.seats.some((seat) => seat.name === name)) throw new Error("牌桌上已經有同名玩家。");
+    const seat: Seat = {
+      id: randomUUID(),
+      kind: "agent",
+      name,
+      cards: [],
+      status: "waiting",
+      result: null,
+      records: { player: 0, dealer: 0, push: 0 },
+    };
+    const token = capabilityToken();
+    const session: AgentSession = { token, seatId: seat.id, cursor: table.nextEventId - 1 };
+    table.seats.push(seat);
+    table.agentSessions.set(token, session);
+    this.#agentTokens.set(token, table.id);
+    table.version += 1;
+    this.#appendEvent(table, "seat_joined", seat, `${seat.name} 加入了牌桌。`);
+    session.cursor = table.nextEventId - 1;
+    const result = { agent_token: token, table: this.#view(table, seat.id) };
+    this.#flushWaiters(table);
+    return result;
+  }
+
+  getHumanView(humanToken: string): PublicTableView {
+    const table = this.#tableForHuman(humanToken);
+    return this.#view(table, table.seats[0]!.id);
+  }
+
+  getAgentView(agentToken: string): PublicTableView {
+    const { table, session } = this.#tableForAgent(agentToken);
+    return this.#view(table, session.seatId);
+  }
+
+  startRound(humanToken: string, expectedVersion: number, idempotencyKey: string): PublicTableView {
+    const table = this.#tableForHuman(humanToken);
+    const humanSeat = table.seats[0]!;
+    const operation = "start_round";
+    const replay = this.#replay<PublicTableView>(table, humanSeat.id, idempotencyKey, operation);
+    if (replay) return replay;
+    this.#assertVersion(table, expectedVersion);
+    if (table.phase === "player_turns") throw new Error("目前牌局還沒結束。");
+
+    table.round += 1;
+    table.deck = this.#deckFactory(table.mode, table.round, table.seats.length).map((card) =>
+      typeof card === "string" ? parseCard(card) : card,
+    );
+    table.dealerCards = [];
+    table.holeRevealed = false;
+    table.activeSeatId = null;
+    for (const seat of table.seats) {
+      seat.cards.splice(0);
+      seat.status = "waiting";
+      seat.result = null;
+    }
+    const openingCards = RULES[table.mode].openingCards;
+    for (let index = 0; index < openingCards; index += 1) {
+      for (const seat of table.seats) seat.cards.push(this.#draw(table));
+      table.dealerCards.push(this.#draw(table));
+    }
+    for (const seat of table.seats) {
+      if (classifyHand(table.mode, seat.cards).kind === "blackjack") seat.status = "stood";
+    }
+    table.phase = "player_turns";
+    table.version += 1;
+    this.#appendEvent(table, "round_started", null, `第 ${table.round} 局開始。`);
+    this.#activateNextSeat(table, -1);
+    const result = this.#remember(table, humanSeat.id, idempotencyKey, operation, this.#view(table, humanSeat.id));
+    this.#flushWaiters(table);
+    return result;
+  }
+
+  humanAction(
+    humanToken: string,
+    action: GameAction,
+    expectedVersion: number,
+    idempotencyKey: string,
+  ): PublicTableView {
+    const table = this.#tableForHuman(humanToken);
+    return this.#seatAction(table, table.seats[0]!, action, expectedVersion, idempotencyKey);
+  }
+
+  agentAction(
+    agentToken: string,
+    action: GameAction,
+    expectedVersion: number,
+    idempotencyKey: string,
+  ): PublicTableView {
+    const { table, session } = this.#tableForAgent(agentToken);
+    const seat = this.#requireSeat(table, session.seatId);
+    return this.#seatAction(table, seat, action, expectedVersion, idempotencyKey);
+  }
+
+  humanSay(humanToken: string, text: string, idempotencyKey: string): PublicTableView {
+    const table = this.#tableForHuman(humanToken);
+    return this.#say(table, table.seats[0]!, text, idempotencyKey);
+  }
+
+  agentSay(agentToken: string, text: string, idempotencyKey: string): PublicTableView {
+    const { table, session } = this.#tableForAgent(agentToken);
+    return this.#say(table, this.#requireSeat(table, session.seatId), text, idempotencyKey);
+  }
+
+  async waitForAgentEvents(agentToken: string, timeoutMs: number): Promise<AgentEventResult> {
+    const { table, session } = this.#tableForAgent(agentToken);
+    const immediate = this.#consumeUnreadEvents(table, session);
+    if (immediate.length) return this.#eventResult(table, session, immediate, false);
+    if (table.waiters.has(agentToken)) throw new Error("這個 Agent 已經有一個等待中的事件請求。");
+    const boundedTimeout = Math.max(0, Math.min(timeoutMs, 25_000));
+    if (boundedTimeout === 0) return this.#eventResult(table, session, [], true);
+    return new Promise<AgentEventResult>((resolve) => {
+      const timer = setTimeout(() => {
+        table.waiters.delete(agentToken);
+        resolve(this.#eventResult(table, session, [], true));
+      }, boundedTimeout);
+      table.waiters.set(agentToken, { resolve, timer });
+    });
+  }
+
+  #seatAction(
+    table: Table,
+    seat: Seat,
+    action: GameAction,
+    expectedVersion: number,
+    idempotencyKey: string,
+  ): PublicTableView {
+    const operation = `take_action:${action}`;
+    const replay = this.#replay<PublicTableView>(table, seat.id, idempotencyKey, operation);
+    if (replay) return replay;
+    this.#assertVersion(table, expectedVersion);
+    if (table.phase !== "player_turns" || table.activeSeatId !== seat.id || seat.status !== "active") {
+      throw new Error("現在不是你的回合。");
+    }
+
+    if (action === "hit") {
+      const card = this.#draw(table);
+      seat.cards.push(card);
+      this.#appendEvent(table, "player_hit", seat, `${seat.name} 要牌，拿到 ${card.code}。`);
+      const hand = classifyHand(table.mode, seat.cards);
+      if (hand.kind === "bust") {
+        seat.status = "bust";
+        this.#appendEvent(table, "player_bust", seat, `${seat.name} 爆牌。`);
+        this.#activateNextSeat(table, table.seats.indexOf(seat));
+      } else if (table.mode === "tenhalf" && (hand.kind === "tenhalf" || hand.kind === "fivedragon")) {
+        seat.status = "stood";
+        this.#appendEvent(table, "player_stood", seat, `${seat.name} 自動停牌。`);
+        this.#activateNextSeat(table, table.seats.indexOf(seat));
+      }
+    } else {
+      seat.status = "stood";
+      this.#appendEvent(table, "player_stood", seat, `${seat.name} 停牌。`);
+      this.#activateNextSeat(table, table.seats.indexOf(seat));
+    }
+    table.version += 1;
+    const result = this.#remember(table, seat.id, idempotencyKey, operation, this.#view(table, seat.id));
+    this.#flushWaiters(table);
+    return result;
+  }
+
+  #say(table: Table, seat: Seat, text: string, idempotencyKey: string): PublicTableView {
+    const normalized = text.trim().slice(0, 500);
+    if (!normalized) throw new Error("台詞不能是空白。");
+    const operation = `say:${normalized}`;
+    const replay = this.#replay<PublicTableView>(table, seat.id, idempotencyKey, operation);
+    if (replay) return replay;
+    const event = this.#appendEvent(table, "message", seat, normalized);
+    table.chat.push({
+      event_id: event.event_id,
+      seat_id: seat.id,
+      speaker: seat.name,
+      speaker_kind: seat.kind,
+      text: normalized,
+      at: event.at,
+    });
+    if (table.chat.length > CHAT_CAP) table.chat.splice(0, table.chat.length - CHAT_CAP);
+    const result = this.#remember(table, seat.id, idempotencyKey, operation, this.#view(table, seat.id));
+    this.#flushWaiters(table);
+    return result;
+  }
+
+  #activateNextSeat(table: Table, currentIndex: number): void {
+    for (let index = currentIndex + 1; index < table.seats.length; index += 1) {
+      const seat = table.seats[index]!;
+      if (seat.status !== "waiting") continue;
+      seat.status = "active";
+      table.activeSeatId = seat.id;
+      this.#appendEvent(table, "turn_started", seat, `輪到 ${seat.name}。`);
+      return;
+    }
+    this.#settleRound(table);
+  }
+
+  #settleRound(table: Table): void {
+    table.activeSeatId = null;
+    table.holeRevealed = true;
+    if (table.seats.some((seat) => classifyHand(table.mode, seat.cards).kind !== "bust")) {
+      while (this.#shouldDealerDraw(table)) table.dealerCards.push(this.#draw(table));
+    }
+    for (const seat of table.seats) {
+      const result = compareHands(table.mode, seat.cards, table.dealerCards);
+      seat.result = {
+        outcome: result.outcome,
+        special: result.special,
+        player_points: result.player.score.total,
+        dealer_points: result.dealer.score.total,
+      };
+      seat.records[result.outcome] += 1;
+    }
+    table.phase = "ended";
+    this.#appendEvent(table, "round_ended", null, `第 ${table.round} 局結束。`);
+  }
+
+  #shouldDealerDraw(table: Table): boolean {
+    const hand = classifyHand(table.mode, table.dealerCards);
+    return hand.kind === "points" && hand.score.total < RULES[table.mode].dealerStand;
+  }
+
+  #draw(table: Table): Card {
+    const card = table.deck.shift();
+    if (!card) throw new Error("牌堆已空，無法繼續這局。");
+    return card;
+  }
+
+  #view(table: Table, viewerSeatId: string): PublicTableView {
+    const dealerCards = table.holeRevealed
+      ? table.dealerCards.slice()
+      : table.mode === "blackjack"
+        ? table.dealerCards.slice(0, 1)
+        : [];
+    const viewer = this.#requireSeat(table, viewerSeatId);
+    const legalActions: PublicAction[] = [];
+    if (table.phase === "player_turns" && table.activeSeatId === viewer.id) legalActions.push("hit", "stand");
+    if (viewer.kind === "human" && (table.phase === "lobby" || table.phase === "ended")) legalActions.push("start_round");
+    return {
+      table_id: table.id,
+      join_code: table.joinCode,
+      mode: table.mode,
+      rule_label: RULES[table.mode].label,
+      phase: table.phase,
+      version: table.version,
+      round: table.round,
+      viewer_seat_id: viewerSeatId,
+      active_seat_id: table.activeSeatId,
+      players: table.seats.map((seat) => ({
+        seat_id: seat.id,
+        name: seat.name,
+        kind: seat.kind,
+        cards: seat.cards.map((card) => card.code),
+        points: scoreHand(table.mode, seat.cards).total,
+        status: seat.status,
+        is_you: seat.id === viewerSeatId,
+        result: seat.result ? { ...seat.result } : null,
+        records: { ...seat.records },
+      })),
+      dealer: {
+        cards: dealerCards.map((card) => card.code),
+        points: dealerCards.length ? scoreHand(table.mode, dealerCards).total : null,
+        hole_revealed: table.holeRevealed,
+      },
+      legal_actions: legalActions,
+      recent_chat: table.chat.slice(-20).map((message) => ({ ...message })),
+      last_event_id: table.nextEventId - 1,
+    };
+  }
+
+  #appendEvent(table: Table, kind: TableEventKind, seat: Seat | null, text: string): TableEvent {
+    const event: TableEvent = {
+      event_id: table.nextEventId,
+      kind,
+      round: table.round,
+      actor_seat_id: seat?.id ?? null,
+      actor_name: seat?.name ?? null,
+      text,
+      at: new Date().toISOString(),
+    };
+    table.nextEventId += 1;
+    table.events.push(event);
+    if (table.events.length > EVENT_CAP) table.events.splice(0, table.events.length - EVENT_CAP);
+    return event;
+  }
+
+  #flushWaiters(table: Table): void {
+    for (const [token, waiter] of table.waiters) {
+      const session = table.agentSessions.get(token);
+      if (!session) continue;
+      const unread = this.#consumeUnreadEvents(table, session);
+      if (!unread.length) continue;
+      clearTimeout(waiter.timer);
+      table.waiters.delete(token);
+      waiter.resolve(this.#eventResult(table, session, unread, false));
+    }
+  }
+
+  #consumeUnreadEvents(table: Table, session: AgentSession): TableEvent[] {
+    const unread = table.events.filter((event) => event.event_id > session.cursor);
+    if (unread.length) session.cursor = unread.at(-1)!.event_id;
+    return unread.filter((event) => event.actor_seat_id !== session.seatId).map((event) => ({ ...event }));
+  }
+
+  #eventResult(table: Table, session: AgentSession, events: TableEvent[], timedOut: boolean): AgentEventResult {
+    return { timed_out: timedOut, events, table: this.#view(table, session.seatId) };
+  }
+
+  #tableForHuman(token: string): Table {
+    const tableId = this.#humanTokens.get(token);
+    if (!tableId) throw new Error("人類座位憑證無效。");
+    return this.#requireTable(tableId);
+  }
+
+  #tableForAgent(token: string): { table: Table; session: AgentSession } {
+    const tableId = this.#agentTokens.get(token);
+    if (!tableId) throw new Error("Agent 座位憑證無效，請重新加入牌桌。");
+    const table = this.#requireTable(tableId);
+    const session = table.agentSessions.get(token);
+    if (!session) throw new Error("Agent 座位已失效。");
+    return { table, session };
+  }
+
+  #requireTable(tableId: string): Table {
+    const table = this.#tables.get(tableId);
+    if (!table) throw new Error("找不到這張牌桌；牌桌主機重啟後，記憶體牌桌會消失。");
+    return table;
+  }
+
+  #requireSeat(table: Table, seatId: string): Seat {
+    const seat = table.seats.find((candidate) => candidate.id === seatId);
+    if (!seat) throw new Error("找不到這個座位。");
+    return seat;
+  }
+
+  #assertVersion(table: Table, expectedVersion: number): void {
+    if (table.version !== expectedVersion) {
+      throw new Error(`牌桌版本衝突：目前是 ${table.version}，不是 ${expectedVersion}。請重新讀取牌桌。`);
+    }
+  }
+
+  #receiptKey(actorId: string, idempotencyKey: string): string {
+    return `${actorId}:${idempotencyKey}`;
+  }
+
+  #replay<T>(table: Table, actorId: string, idempotencyKey: string, operation: string): T | null {
+    const receipt = table.receipts.get(this.#receiptKey(actorId, idempotencyKey));
+    if (!receipt) return null;
+    if (receipt.operation !== operation) throw new Error("同一個 idempotency_key 已用於不同操作。");
+    return structuredClone(receipt.value) as T;
+  }
+
+  #remember<T>(table: Table, actorId: string, idempotencyKey: string, operation: string, value: T): T {
+    table.receipts.set(this.#receiptKey(actorId, idempotencyKey), { operation, value: structuredClone(value) });
+    return value;
+  }
+
+  #newJoinCode(): string {
+    for (;;) {
+      const code = randomBytes(5).toString("base64url").slice(0, 7).toUpperCase();
+      if (!this.#joinCodes.has(code)) return code;
+    }
+  }
+}
+
+function capabilityToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+function normalizeName(value: string, fallback: string): string {
+  const normalized = value.trim().slice(0, 80);
+  return normalized || fallback;
+}

@@ -1,13 +1,13 @@
-# MCP 驗證報告
+# MCP 共桌版驗證報告
 
-驗證日期：2026-08-31
-驗證範圍：`feat/mcp-server` 本機 STDIO MVP
+驗證日期：2026-09-01
+驗證範圍：`feat/mcp-server` 本機 Host、人類 UI、多 Agent STDIO MCP adapter
 
 ## 結論
 
-目前自動化驗證為 **PASS**：MCP game core 與原版瀏覽器規則在固定牌序下逐步一致，且已測的 MCP 成功、錯誤、版本衝突與冪等重試路徑都沒有回傳未翻開的莊家底牌或剩餘牌堆。
+目前自動化驗證為 **PASS**：MCP game core 與原版瀏覽器規則在固定牌序下逐步一致；一位人類與多個獨立 Agent 能依序完成同一局；每個 Agent 的通知游標互相獨立；已測的 UI API 與 MCP 成功、錯誤、版本衝突及冪等重試路徑都沒有回傳未翻開的莊家底牌或剩餘牌堆。
 
-這個結論只適用於本機 STDIO 架構。未來加入 Streamable HTTP 時，仍須完成 OAuth actor／seat binding 後才能宣稱遠端多人環境也符合雙盲。
+這個結論只適用於 loopback 本機 Host。它不是遠端服務的安全認證。
 
 ## 自動化證據
 
@@ -22,7 +22,7 @@ git diff --check
 
 結果：
 
-- 14 個 Node 測試全部通過；
+- 17 個 Node 測試全部通過；
 - TypeScript typecheck 通過；
 - npm audit：0 vulnerabilities；
 - `git diff --check` 通過。
@@ -40,29 +40,54 @@ git diff --check
 
 原版的完整底牌與牌堆只從瀏覽器既有的測試鉤子讀取，僅用於同 process 的測試比對；MCP schema 與 tool result 不提供這個鉤子。
 
-## 雙盲紅隊測試
+## 共桌、通知與雙盲紅隊測試
 
-`test/mcp-server.test.ts` 在牌序中放入可辨識的暗牌 canary，檢查完整 tool result（文字與 structured content）：
+`test/multiplayer-store.test.ts` 驗證一位人類與兩個 Agent 的座位順序、各自合法動作、莊家結算與戰績，並覆蓋：
+
+- 同一事件會出現在每個 Agent 各自的未讀佇列；
+- Agent A 讀取事件不會吃掉 Agent B 的通知；
+- 人類動作會喚醒兩個正在等待的 Agent；
+- Agent A 說話會喚醒 Agent B；
+- 聊天不改變遊戲版本；
+- 相同 idempotency key 不會重複執行動作。
+
+`test/host-server.test.ts` 透過真實 HTTP listener 驗證 UI 靜態資源、安全標頭、人類建桌、Agent 入座、Bearer 席位憑證與人類動作喚醒 Agent。
+
+`test/mcp-server.test.ts` 啟動兩個獨立的 in-memory MCP client/server 連線，共用同一個 HTTP Host。在固定牌序放入可辨識暗牌 canary，檢查完整 tool result（文字與 structured content）：
 
 | 路徑 | 驗證 |
 | --- | --- |
-| `join_table` | 莊家底牌、下一張牌與剩餘牌堆均不可見 |
+| `join_table` | 取得獨立座位，但 capability token 不進入 MCP result |
 | `get_table_view` | 重讀不增加可見資訊 |
-| `say_at_table` | 聊天成功與重試都不洩漏，也不重複寫入 |
-| `take_action` | 要牌前後、停牌、版本衝突、key 誤用與重試皆受檢查 |
-| `start_new_round` | 成功、過早呼叫與重試皆受檢查，不重複發牌 |
-| 找不到牌桌／空白台詞 | 錯誤內容不夾帶牌局內部狀態 |
+| `say_at_table` | Agent A 的話喚醒 Agent B，不洩漏私有狀態 |
+| `take_action` | 非目前玩家被拒；輪替、停牌與結算使用最新版本 |
+| `wait_for_table_event` | 讀到人類／其他 Agent 的動作，並取得自己的最新合法動作 |
+| 暗牌 canary | 莊家底牌、下一張牌與 `deck` 欄位在攤牌前均不可見 |
 
-另由 `test/stdio.test.ts` 啟動兩個獨立 STDIO server process，確認 client B 無法發現或讀取 client A 建立的記憶體牌桌，且工具清單不存在 `list_tables`。
+另由 `test/stdio.test.ts` 啟動兩個真正獨立的編譯後 STDIO server process，確認它們能加入同一張人類牌桌，並透過共用 Host 看到彼此的加入事件；每個 process 仍只持有自己的 Agent 座位憑證。
+
+## 真實 Codex 與 UI 端到端
+
+以本機 `codex exec` 連接實際 MCP 設定，從人類瀏覽器 UI 完成一局 21 點：
+
+1. 人類建立共桌，Codex 以邀請碼入座並在桌邊聊天；
+2. 人類從 UI 開局，Codex 的等待呼叫收到 `round_started` 與人類回合；
+3. 人類要牌時，Codex 收到 `player_hit`，但沒有得到不屬於自己的合法動作；
+4. 人類停牌時，Codex 收到 `player_stood` 與自己的 `turn_started`；
+5. Codex 依 17 點手牌及莊家 10 點明牌自行選擇停牌；
+6. Host 才公開莊家底牌並結算莊家 20 點勝出。
+
+桌面版及 390 × 844 手機 viewport 均人工檢查過建桌、邀請碼、座位、牌面、暗牌、聊天、按鈕禁用與結算狀態；沒有發現遮擋或橫向溢出。
 
 ## 洗牌檢查
 
 正式牌局使用 `crypto.randomInt` 驅動 Fisher–Yates shuffle。測試連續建立 100 副洗牌結果，逐副確認仍是 52 張、無重複、無缺牌。
 
-固定牌序注入只存在 game core 與 `TableStore` 的測試 seam；MCP tools 沒有接受 deck／seed／card 的輸入欄位。這項檢查能證明牌組完整性與介面封鎖，不能單獨當作隨機分布的統計認證。
+固定牌序注入只存在 game core、測試用 store 與測試 Host；正式 MCP tools 和人類 API 沒有接受 deck／seed／card 的輸入欄位。這項檢查能證明牌組完整性與介面封鎖，不能單獨當作隨機分布的統計認證。
 
 ## 尚待下一階段
 
-- 讓真實 MCP client／模型各自玩 21 點與十點半多局，檢查工具選擇、重試與最終文字回覆；
-- 若做 Remote MCP：補 OAuth、呼叫者身分綁定席位、跨席位存取測試與部署邊界測試；
-- 瀏覽器觀戰頁若要接 MCP 牌桌，另做不同席位的視角過濾測試。
+- 用 Claude Code 完成一次真實 MCP client／模型端到端牌局；
+- 增加瀏覽器自動化回歸測試，目前 UI 只有人工視覺與互動檢查；
+- 若做 Remote MCP：補 TLS、OAuth、呼叫者身分綁定席位、撤銷、資源限制與跨桌存取測試；
+- 若加入真人多人或觀戰者，為每種角色新增獨立視角與權限測試。
