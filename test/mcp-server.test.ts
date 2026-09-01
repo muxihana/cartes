@@ -78,6 +78,13 @@ test("multiple MCP Agents share turns and receive independent notifications with
     true,
     "the displaced MCP process loses its old seat token",
   );
+  const freshTable = store.createTable("tenhalf", "另一位人類");
+  const movedToFreshTable = await first.callTool({
+    name: "join_table",
+    arguments: { join_code: freshTable.table.join_code, agent_name: "小葵換桌" },
+  });
+  assert.equal(movedToFreshTable.isError, undefined, "a stale process-local token does not block joining a new table");
+  assert.equal(tableFrom(movedToFreshTable).join_code, freshTable.table.join_code);
 
   const earlySecond = await second.callTool({
     name: "take_action",

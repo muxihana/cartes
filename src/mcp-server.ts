@@ -92,7 +92,8 @@ export function createCartesMcpServer(host = new CartesHostClient()): McpServer 
     "join_table",
     {
       title: "Join a human's Cartes table",
-      description: "Use the invitation code shown in the human browser UI to take one independent Agent seat.",
+      description:
+        "Use the invitation code shown in the human browser UI to take one independent Agent seat. If this process only holds a stale seat token, join_table releases it automatically before joining.",
       inputSchema: {
         join_code: z.string().min(4).max(20),
         agent_name: z.string().min(1).max(80),
@@ -102,7 +103,16 @@ export function createCartesMcpServer(host = new CartesHostClient()): McpServer 
       annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
     },
     async ({ join_code, agent_name, reconnect_code }) => {
-      if (agentToken) return errorResult("這個 MCP process 已經入座；一個 Agent process 只能持有一個座位。");
+      if (agentToken) {
+        try {
+          await host.getAgentView(agentToken);
+          return errorResult("這個 MCP process 已經入座；一個 Agent process 只能持有一個有效座位。");
+        } catch (error) {
+          const message = messageFrom(error);
+          if (!isStaleSeatError(message)) return errorResult(message);
+          agentToken = null;
+        }
+      }
       try {
         const joined = reconnect_code
           ? await host.rejoinAgent(join_code, agent_name, reconnect_code)
@@ -220,6 +230,12 @@ function errorResult(message: string) {
 
 function messageFrom(error: unknown): string {
   return error instanceof Error ? error.message : "牌桌操作失敗。";
+}
+
+function isStaleSeatError(message: string): boolean {
+  return ["Agent 座位憑證無效", "Agent 座位已失效", "找不到這張牌桌"].some((fragment) =>
+    message.includes(fragment),
+  );
 }
 
 function summarize(table: PublicTableView): string {

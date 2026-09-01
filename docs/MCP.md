@@ -71,6 +71,8 @@ Agent instructions 會要求它持續參與後續牌局，直到人類結束測�
 
 重連碼只會回傳給已驗證的人類 UI，不會出現在牌桌公開視角或一般 MCP tool result。若懷疑邀請詞外洩，重新按一次「重連」就會讓上一組尚未使用的碼失效。
 
+如果 Host 重啟、原座位被人類授權的新 process 接管，或舊座位憑證因其他原因失效，原 MCP process 下一次呼叫 `join_table` 時會先向 Host 驗證舊 token。確認失效後會自動清除 process 內的舊座位狀態，再加入新桌；暫時連不上 Host 等一般網路錯誤不會誤清 token。仍持有有效座位時，`join_table` 會繼續拒絕第二個座位。
+
 ## MCP tools
 
 | Tool | 用途 |

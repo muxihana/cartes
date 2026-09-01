@@ -51,6 +51,7 @@ git diff --check
 - 聊天不改變遊戲版本；
 - 相同 idempotency key 不會重複執行動作。
 - 人類產生的一次性重連碼能在進行中的回合接回同一座位，錯誤名稱、重複使用及舊 token 都會被拒絕。
+- process 只持有失效 token 時，`join_table` 會自動清除舊狀態並加入新桌；有效 token 仍禁止同 process 取得第二個座位。
 
 `test/host-server.test.ts` 透過真實 HTTP listener 驗證 UI 靜態資源、安全標頭、人類建桌、Agent 入座、Bearer 席位憑證與人類動作喚醒 Agent。
 
