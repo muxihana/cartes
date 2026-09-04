@@ -29,6 +29,9 @@
     h1 { margin: 0; font-family: "Snell Roundhand","Savoye LET","Segoe Script","Brush Script MT",cursive; font-size: clamp(1.85rem,5vw,2.6rem); line-height: 1; color: var(--accent-dark); }
     .setting-button, .turn-badge { flex: none; min-height: 34px; padding: 5px 11px; border: 1px solid #d9b2b8; border-radius: 999px; color: #a05f6a; background: #fdf7f8; font-size: .76rem; font-weight: 800; }
     .setting-button { margin-left: auto; cursor: pointer; }
+    /* 回棋室：右上素字（家格式，同對局史 back-link）；相對路徑 ../chambre/ 在 GitHub Pages 同 origin 下指向大廳 */
+    .home-link { flex: none; padding: 8px 0; color: #a08a8d; text-decoration: none; font-size: .82rem; -webkit-tap-highlight-color: transparent; }
+    .home-link:active { color: #b76e79; }
     .turn-badge { display: flex; align-items: center; }
     .mode-switch { width: min(690px,100%); margin: 0 auto 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .mode-button { min-height: 42px; border: 1px solid #d9b2b8; border-radius: 9px; color: var(--ink); background: transparent; cursor: pointer; font-weight: 750; }
@@ -76,7 +79,7 @@
     .record-note { margin: 6px 0 16px; color: var(--muted); font-size: .72rem; line-height: 1.45; }
     .rule-note, .setup-note { color: var(--muted); font-size: .8rem; line-height: 1.55; }
     .setup-note { padding: 10px 11px; border-radius: 9px; background: #f9edf0; color: #7b5159; }
-    .setup-note.ready { background: #edf5ee; color: #4e6d52; }
+    .setup-note.ready { background: #f5e6e9; color: #79515a; } /* 09-04 業主截圖抓到綠→改玫瑰，同 Échecs */
     .chatlog-overlay, .drawer-overlay { position: fixed; inset: 0; z-index: 60; display: flex; background: rgba(58,44,34,.32); }
     .chatlog-overlay { align-items: center; justify-content: center; } .chatlog-overlay[hidden], .drawer-overlay[hidden] { display: none; }
     .chatlog-panel { display: flex; flex-direction: column; width: min(440px,92vw); max-height: 74vh; border-radius: 16px; border: 1px solid rgba(122,95,73,.25); overflow: hidden; background: rgba(251,246,237,.97); box-shadow: 0 18px 44px rgba(48,38,31,.3); }
@@ -132,6 +135,7 @@
       <header class="heading">
         <h1>Cartes</h1>
         <button id="settingButton" class="setting-button" type="button">設定</button>
+        <a class="home-link" href="../chambre/">回棋室</a>
       </header>
       <div class="mode-switch" role="group" aria-label="選擇玩法">
         <button class="mode-button" type="button" data-mode="blackjack" aria-pressed="true">21 點</button>
@@ -182,6 +186,7 @@
     <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
       <header class="drawer-head"><h2 id="settingsTitle">牌桌設定</h2><button class="icon-close" type="button" data-close-settings aria-label="關閉">×</button></header>
       <form id="settingsForm" class="settings-form">
+        <p class="setting-note">這些設定跟棋室大廳（Chambre）共用：在大廳或任何一房改，其他房都會跟著換。</p>
         <fieldset>
           <legend>API</legend>
           <div class="quick-picks" aria-label="服務商快選">
@@ -243,6 +248,17 @@
       const RANKS = Object.freeze(["A","2","3","4","5","6","7","8","9","10","J","Q","K"]);
       const STORE_PREFIX = "publicCardTable_";
       const SETTINGS_KEY = STORE_PREFIX + "settings_v1";
+      /* 棋室大廳共用鑰匙（chambre）：同 origin 各房共讀；updatedAt 新的贏，本頁存檔同時回寫（欄位定死，三頁契約） */
+      const CHAMBRE_KEY = "chambre_settings_v1";
+      const CHAMBRE_FIELDS = ["endpoint","apiKey","model","characterName","characterDescription","playerName","avatarDataUrl","playerAvatarDataUrl"];
+      function writeSettings() {
+        settings.updatedAt = Date.now();
+        safeSet(SETTINGS_KEY,JSON.stringify(settings));
+        const shared = { v: 1 };
+        for (const field of CHAMBRE_FIELDS) shared[field] = settings[field] ?? "";
+        shared.updatedAt = settings.updatedAt;
+        safeSet(CHAMBRE_KEY,JSON.stringify(shared));
+      }
       const RECORD_KEY = STORE_PREFIX + "records_v1";
       const CHAT_KEY = STORE_PREFIX + "chat_v1";
       const CHAT_CAP = 100;
@@ -314,7 +330,15 @@
       }
       function readRecords() { return normalizeRecords(readJson(RECORD_KEY,null)); }
       function defaultSettings() { return { endpoint: "", apiKey: "", model: "", characterName: "", characterDescription: "", playerName: "你", avatarDataUrl: "", playerAvatarDataUrl: "" }; }
-      function readSettings() { return { ...defaultSettings(), ...readJson(SETTINGS_KEY,{}) }; }
+      function readSettings() {
+        const own = { ...defaultSettings(), ...readJson(SETTINGS_KEY,{}) };
+        const shared = readJson(CHAMBRE_KEY,null);
+        if (shared && typeof shared === "object" && Number(shared.updatedAt || 0) > Number(own.updatedAt || 0)) {
+          for (const field of CHAMBRE_FIELDS) if (typeof shared[field] === "string") own[field] = shared[field];
+          own.updatedAt = Number(shared.updatedAt);
+        }
+        return own;
+      }
       function settingsComplete(value = settings) { return Boolean(value.endpoint.trim() && value.apiKey.trim() && value.model.trim() && value.characterName.trim()); }
       function localDay() { return new Date(Date.now() - new Date().getTimezoneOffset() * 60000 - 4 * 3600 * 1000).toISOString().slice(0,10); }
 
@@ -603,7 +627,7 @@
         // 等待期間 change 事件冒泡到表單觸發 persistSettings 把 settings 整顆換新→縮圖寫進孤兒。
         // 修法＝等完再對「當下的」settings 賦值。
         const dataUrl = await resizeAvatar(file);
-        settings[key] = dataUrl; safeSet(SETTINGS_KEY,JSON.stringify(settings)); renderIdentity(); return settings[key];
+        settings[key] = dataUrl; writeSettings(); renderIdentity(); return settings[key];
       }
       function formToSettings() {
         return { ...settings, endpoint: elements.endpointInput.value.trim().replace(/\/+$/,""), apiKey: elements.apiKeyInput.value.trim(), model: elements.modelInput.value.trim(), characterName: elements.characterNameInput.value.trim(), characterDescription: elements.characterDescriptionInput.value, playerName: elements.playerNameInput.value.trim() || "你" };
@@ -615,7 +639,7 @@
       function persistSettings() {
         const wasComplete = settingsComplete();
         settings = formToSettings();
-        safeSet(SETTINGS_KEY,JSON.stringify(settings));
+        writeSettings();
         renderIdentity();
         if (!wasComplete && settingsComplete()) setTimeout(requestOpening,0);
       }
@@ -623,6 +647,7 @@
         if (!skipConfirm && !confirm("清除這張牌桌在本站儲存的金鑰、角色卡、頭像、對話與戰績？")) return false;
         const keys = []; for (let index = 0; index < localStorage.length; index += 1) { const key = localStorage.key(index); if (key?.startsWith(STORE_PREFIX)) keys.push(key); }
         keys.forEach(key => localStorage.removeItem(key));
+        try { localStorage.removeItem(CHAMBRE_KEY); } catch (_error) {}
         if (apiController) apiController.abort(); settings = defaultSettings(); transcript = []; openingSent = false; lastSpokenRound = null; state.records = blankRecords(); settingsToForm(); renderIdentity(); startRound({ mode: state.mode, skipSpeech: true }); updateChatlogTitle(); elements.cardStatus.textContent = "本站牌桌資料已清除。"; elements.avatarStatus.textContent = "頭像已清除。"; return true;
       }
       async function loadModels() {
