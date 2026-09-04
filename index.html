@@ -596,6 +596,7 @@
       }
       function importJsonPayload(raw) {
         if (raw?.type === "cartes_memory_v1") return importMemoryPackage(raw);
+        const foreign = typeof raw?.type === "string" ? raw.type.match(/^([a-z]+)_(memory|card)_v1$/) : null;if (foreign && foreign[1] !== "cartes") { const roomNames = { cartes: "牌桌 Cartes", echecs: "西洋棋 Échecs", gomoku: "五子棋 Gomoku", banqi: "暗棋 Banqi" }; const roomName = roomNames[foreign[1]] || foreign[1];if (foreign[2] === "memory") throw new Error("這是「" + roomName + "」的記憶包，請到那個房間匯入。");return applyParsedCard({ name: String(raw.name || ""), description: String(raw.description || "") },String(raw.avatarDataUrl || ""),true); }
         if (raw?.type === "cartes_card_v1") return applyParsedCard({ name: String(raw.name || ""), description: String(raw.description || "") },String(raw.avatarDataUrl || ""),true);
         return applyParsedCard(normalizeCharacterCard(raw));
       }
