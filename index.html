@@ -123,6 +123,8 @@
     .upload-label input { position: absolute; width: 1px; height: 1px; opacity: 0; }
     .danger-button { color: #8c3232; border-color: #c99191; }
     .status { min-height: 1.5em; margin: 0; color: var(--muted); font-size: .8rem; }
+    .field-hint { margin: 4px 0 10px; color: var(--muted); font-size: .76rem; line-height: 1.5; }
+    .field-hint a { color: #87525b; text-decoration: underline; text-underline-offset: 2px; }
     .privacy-mini { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.55; }
     @media (prefers-reduced-motion: reduce) { .thinking-dots i, .coach-bubble, .coach-thinking { animation: none; } }
     @media (max-width: 760px) { .app { min-height: auto; display: block; padding: 12px; } .heading,.table-stage,.chat-row,.mode-switch,.actions { width: min(94vw,620px); } .panel { width: min(94vw,620px); margin: 14px auto 0; } .card-table { min-height: 330px; border-width: 6px; border-radius: 34px; } }
@@ -196,6 +198,7 @@
           </div>
           <div class="field"><label for="endpointInput">端點網址</label><input id="endpointInput" name="endpoint" autocomplete="url"></div>
           <div class="field"><label for="apiKeyInput">金鑰</label><div class="inline"><input id="apiKeyInput" name="apiKey" type="password" autocomplete="off"><button id="toggleKeyButton" class="small-button" type="button">顯示</button></div></div>
+          <p class="field-hint">還沒有金鑰？<a href="../chambre/guide.html">看圖文教學</a>（免費、不用綁卡，設定頁逐欄也有教）</p>
           <!-- datalist 退役（業主 08-31 手機檢舉：格內有字時建議被前綴過濾＝清單像消失）→ 真下拉選單 -->
           <div class="field"><label for="modelInput">模型名</label><div class="inline"><input id="modelInput" name="model" autocomplete="off"><button id="loadModelsButton" class="small-button" type="button">撈清單</button></div><select id="modelSelect" class="model-select" hidden></select></div>
           <p id="modelStatus" class="status" aria-live="polite"></p>
