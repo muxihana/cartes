@@ -12,7 +12,9 @@
 
 沒有填完 API 也能正常玩牌，只是莊家暫時不說話。
 
-## 金鑰保母章
+## 金鑰教學
+
+站內圖文版（拿金鑰六步、免費層確認、設定頁逐欄）在棋室大廳：`https://muxihana.github.io/chambre/guide.html`。
 
 Google AI Studio 有免費額度可供入門：
 
